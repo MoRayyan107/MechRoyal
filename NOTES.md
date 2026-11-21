@@ -181,4 +181,4 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-02 | a62d9a5a81595c0786c17316eade10e300ded656 | hide in cover, walk quietly, hold fire, endgame at the centre | 1.69 |
 | sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | below 1.69 (exact score not reported) |
 | sub-04 | 25e5e53314c303c3df1be0db3c67e671003e61be | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | 1.98 |
-| sub-05 | see `git rev-parse sub-05` | sub-04 with ground pickup radius 80 m | pending |
+| sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
