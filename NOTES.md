@@ -158,6 +158,22 @@ comes into view. Recorded match: no change (nearest ground pickup 134 m). Synthe
 is taken at t=5.7 s by sub-05 and ignored by sub-04. Reading: +0.3 over 1.98 = keep; within +-0.1 = noise, keep only
 if we have nothing better (it is harmless by construction); below = drop and go back to sub-04.
 
+## sub-05b: loot bug fixes on sub-05 (from the code review; no new rule)
+
+- #2 give-up timer: counts the seconds actually spent fetching each pickup (per pickup id), so a pickup that blinks
+  out of view, or a rule that flickers off, no longer resets it. CAN change play: a fetch that never gets closer now
+  ends after its budget (2 x walk + 4 s) instead of possibly never. Staged test: blinking pickup, sub-05 chased it
+  238 ticks in 60 s and never gave up; sub-05b gave up after 12.5 s.
+- #6 take results: `took` / `take_failed` are read on every tick, also when the zone skips the loot rule. CAN change
+  play: a failed take ("have"/"full"/"busy"/"gone") seen on a zone-pressing tick now bans that pickup; before, the bot
+  could walk back to it. Staged test confirms.
+- #8 README says 80 m. Cannot change play.
+- #9 removed the dead "laser charging" check: with a laser in slot 1 no pickup outranks it, so the loop returned
+  "nothing near" with the same result (None, state off). Cannot change play.
+- Normal path identical: 0 differing actions vs sub-05 on the 300 recorded ticks and 3000 fuzz ticks.
+- Not tagged as submitted. Because #2 and #6 can change play (rarely), submit sub-05b before sub-06 so sub-06 builds on
+  a known score. Expect a score within noise of 2.31.
+
 ## Remaining plan (until Sunday ~1:00 PM UK)
 sub-06 rooftop weapons by jump + jet; sub-07 laser fire at visible mechs out to ~220-260 m; sub-08 early duel with
 the spawn neighbour (propose first). Each based on the best-scoring tag so far.
@@ -170,7 +186,8 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-02 (hide) | PASS: replay p99 6.2 ms, fuzz p99 6.3 / max 7.1 ms, routes 114/120 to the spot (misses: walker stuck in pockets it cannot jet out of) | PASS p99 6.4 ms | PASS p99 1.3 ms, max 1.4 ms (twice) |
 | sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 67ce118) |
 | sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | PASS p99 1.1-2.0 ms, max 2.1 ms (twice, built from 25e5e53) |
-| sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | see report |
+| sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.9 ms, max 2.1 ms (twice, built from bd9167c) |
+| sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | see report |
 
 ## Submissions
 
@@ -182,3 +199,4 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | below 1.69 (exact score not reported) |
 | sub-04 | 25e5e53314c303c3df1be0db3c67e671003e61be | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | 1.98 |
 | sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
+| sub-05b | see `git rev-parse sub-05b` | sub-05 + loot fixes #2 #6 #8 #9 (not yet submitted) | not submitted |

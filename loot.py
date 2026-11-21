@@ -35,12 +35,14 @@ class Looter:
         self.g = grid
         self.reach = float(reach)
         self.target = None          # pickup id we are fetching
-        self.started = 0.0
-        self.limit_s = 0.0
+        self.spent = {}             # pickup id -> seconds actually spent fetching it (sub-05b fix #2)
+        self.limit = {}             # pickup id -> time budget, set when we first go for it
+        self.prev_t = None          # time of the previous tick on which we were fetching
         self.banned = set()         # pickup ids we gave up on
         self.state = "off"
 
     def read_events(self, obs) -> None:
+        """Called by the bot on EVERY tick (sub-05b fix #6), so take results are never missed."""
         for ev in obs.get("events") or []:
             t = ev.get("type")
             if t == "take_failed" and ev.get("reason") in ("gone", "have", "full", "busy"):
@@ -53,7 +55,6 @@ class Looter:
 
     def update(self, obs, me, now, attacker, attack_t, zone, walk, goal, t_out_fn, circle_fn):
         """None (rule off), or (yaw, pickup_id, take_now: bool, drop_slot or None)."""
-        self.read_events(obs)
         x, y, z = me["pos"]
         # --- safety gates
         if any(m.get("kind") == "mech" for m in obs.get("mechs") or []):
@@ -66,8 +67,8 @@ class Looter:
         held = {w.get("kind") for w in weapons if w}
         free = weapons[1] if len(weapons) > 1 else None
         cur_rank = RANK.get(free.get("kind"), 1) if free else 0
-        if free and free.get("kind") == "laser" and free.get("charge", 0):
-            return self._off("laser charging")          # cannot swap out a charging laser
+        # (no "laser charging" check needed: with a laser in slot 1, cur_rank is the top rank,
+        #  so no pickup can beat it and we never try to swap a laser out)
         drones = [m["pos"] for m in obs.get("mechs") or [] if m.get("kind") == "npc" and m.get("pos")]
         g = self.g
         gx, gy, gr = goal
@@ -101,13 +102,16 @@ class Looter:
         if best is None:
             return self._off("nothing near")
         _, pid, px, py, pz, d, kind = best
-        if pid != self.target:
-            self.target = pid
-            self.started = now
-            self.limit_s = 2.0 * d / max(walk, 1.0) + 4.0
-        elif now - self.started > self.limit_s:
+        # give-up timer: count only the time we actually spend fetching this pickup, across any ticks
+        # where the rule was off in between (a pickup blinking out of view no longer resets it)
+        if pid not in self.limit:
+            self.limit[pid] = 2.0 * d / max(walk, 1.0) + 4.0
+        dt = 0.1 if self.prev_t is None else min(max(now - self.prev_t, 0.0), 0.2)
+        self.spent[pid] = self.spent.get(pid, 0.0) + dt
+        self.prev_t = now
+        self.target = pid
+        if self.spent[pid] > self.limit[pid]:
             self.banned.add(pid)
-            self.target = None
             return self._off("gave up")
         drop = 1 if free else None
         yaw = math.atan2(py - y, px - x)
@@ -118,4 +122,5 @@ class Looter:
     def _off(self, why: str):
         self.state = "off"
         self.target = None
+        self.prev_t = None
         return None

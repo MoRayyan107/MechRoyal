@@ -191,6 +191,15 @@ class Bot:
 
         # ---- weapons (sub-04): fetch a better weapon when it is close and safe. The zone wins:
         # the rule is skipped whenever the zone boost condition above is on or we are outside.
+        # Take results are read on every tick, even when the rule is skipped (sub-05b fix #6).
+        if self.looter is not None:
+            try:
+                self.looter.read_events(obs)
+            except Exception:
+                self.loot_errors += 1
+                if self.loot_errors <= 5:
+                    log(f"loot events failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+        r = None
         if self.looter is not None and not boost and me.get("in_zone", True):
             try:
                 r = self.looter.update(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
