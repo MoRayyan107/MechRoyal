@@ -229,6 +229,24 @@ the time), drones, and kills (the dead mech's cubes + 2, dropped on the ground).
   1.6 s after 7 shots (5 rounds left), early reload, cube collected at 3.5 s, plating picked, back on the route at
   4.2 s with a full magazine.
 - Reading the result vs 2.31: +0.1 or more = keep; within +-0.1 = no effect; below 2.2 = drop it.
+- RESULT: 2.48 (+0.17). Keep: new best and base for sub-10.
+- Observation: collecting cubes and upgrading helped; weapon pickup by radius was saturated at 80 m.
+
+## sub-10: cube and crate radius 60 m -> 80 m (base sub-09 = 2.48)
+
+One change: loot.CUBE_M and loot.CRATE_M 60 -> 80 (plus the doc lines quoting them). 4-crate cap, 9-round start and
+every gate unchanged.
+- Risk (guess-level spawn model, as for sub-08): a spot 60-80 m away is closer to another spawn than to us in ~4% of
+  cases, within 70 m of another spawn ~3%, within 45 m ~0% (the rejected 80-100 m weapon band was 25%). Noise is made
+  where WE stand (gun 320 m, crate 220 m) whatever the crate distance, so 80 m adds no louder shots, only more crates in
+  range; limits: 4-crate cap, no mech in view, no hit in 4 s, rule off the moment a mech is listed.
+- Worst case: cube at 80 m = 6.8 s out, give-up after 2 x 6.8 + 4 = 17.7 s; crate at 80 m = ~6 s walking toward it while
+  firing (gun spread at 80 m ~0.8 m vs crate radius 1.4 m), crate give-up 6 s unchanged, then its cube. The zone check
+  scales with distance (there + 1.5 x back + 20 s) and still holds.
+- Chosen 80 m over 70 m: a fresh lever that just gained +0.17, a low-risk band, +78% area for a clearer signal.
+- Fires (guess): ground crates in range 0.46 -> 0.88 on average, i.e. at least one in ~59% of matches instead of ~37%,
+  before visibility losses; cubes scale the same way.
+- Reading the result vs 2.48: +0.1 or more = keep 80 m; within +-0.1 = no effect, stay on 60 m; below 2.38 = drop it.
 
 ## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
 
@@ -286,8 +304,8 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
 ## Remaining plan (until Sunday ~1:00 PM UK)
 Base = best-scoring tag so far (sub-05b = 2.31 until sub-08's score is in). One change per submission.
 1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
-2. sub-09: "get cubes" - walk onto visible cubes within 60 m and shoot visible ground crates within 60 m for their
-   cube, as one change (built, waiting for its score).
+2. sub-09: "get cubes" (cubes + crates within 60 m): 2.48, kept, new base.
+   sub-10: cube and crate radius 60 m -> 80 m (built, waiting for its score).
 3. sub-06: rooftop weapons by jump + jets (design on file above, not built).
 4. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
@@ -304,7 +322,8 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.9 ms, max 2.1 ms (twice, built from bd9167c) |
 | sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 7b2029d) |
 | sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.0-1.8 ms, max 2.1 ms (twice, built from 30afa6b) |
-| sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | see report |
+| sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | PASS p99 1.3-1.4 ms, max 1.6 ms (twice, built from ef5de74) |
+| sub-10 (cube/crate 80 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.5 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-09). Fuzz with crates/cubes out to 100 m: p99 6.3 ms, max 9.0 ms. Side by side vs sub-09 with nothing at 60-80 m: 0/3000 random ticks (9600 crates/cubes at 0-60 and 80-100 m kept), 0/299 recorded. Injected crash in cube + crate code: 300/300 answered. Synthetic 70 m on open ground: cube collected at 5.6 s, plating picked, back on route at 5.8 s; crate destroyed at 1.6 s (7 shots, walking toward it), early reload, cube at 5.6 s, plating, route at 5.8 s; sub-09 ignores both | PASS p99 6.5 ms | see report |
 | sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.4 ms (4 runs, built from da09fcf) |
 
 ## Submissions
@@ -320,4 +339,5 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
 | sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
-| sub-09 | see `git rev-parse sub-09` | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | pending |
+| sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep, base for sub-10) |
+| sub-10 | see `git rev-parse sub-10` | sub-09 with cube and crate radius 80 m | pending |
