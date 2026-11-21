@@ -333,6 +333,8 @@ Results (offline, our model):
   sees us in the air with jets audible at 90 m (sound GUESS: not checked against house-bot behaviour), and we fall.
   Budget limit per pickup: 2 x walk + 8 s of active time.
 - Reading vs 2.48: +0.1 or more keep; within +-0.1 no effect; below 2.38 drop.
+- RESULT: 2.52 (+0.04), no effect, harmless, as expected (fires in ~3-6% of matches). Not the base;
+  sub-06 stays in history.
 
 ## sub-11: upgrade choice order (base sub-09 = 2.48)
 
@@ -358,6 +360,9 @@ One change: `bot.UPGRADE_ORDER`. bot.py and loot.py were first restored byte-ide
 - What one submission can tell: picks are not visible to us. If ~30-50% of matches reach a cube (guess), ~15-25% of
   matches get a different upgrade, so +0.1 or more is a real signal and +-0.1 most likely means too few matches changed.
 - Reading vs 2.48: +0.1 or more keep; within +-0.1 no effect; below 2.38 drop.
+- RESULT: 2.69 (+0.21 vs 2.48). Keep: sub-11 is the new base.
+- Observation: the upgrade path moves the score (sub-09 cubes +0.17, sub-11 order +0.21): more cubes =
+  more offers is the next lever.
 
 ## sub-08: ground weapon pickup radius 80 m -> 100 m (base sub-05b = 2.31)
 
@@ -399,14 +404,14 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
   the sub-07 first-shot timing) are weaker than they looked.
 
 ## Remaining plan (until Sunday ~1:00 PM UK)
-Base = best-scoring tag so far: sub-09 = 2.48. One change per submission.
+Base = best-scoring tag so far: sub-11 = 2.69 (ad43effd079ac41e56ff1ea5a4f56740342f1cc8). One change per submission.
 1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
 2. sub-09: "get cubes" (cubes + crates within 60 m): 2.48, kept, new base.
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
-3. sub-06: rooftop weapons by jump + jets, on sub-09: built 21 Nov, submitted once; base stays sub-09 unless
-   sub-06 scores >= 2.58.
-4. sub-11: upgrade choice order, on sub-09: built 21 Nov (bot.py and loot.py restored byte-identical to sub-09 first).
-5. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
+3. sub-06: rooftop weapons by jump + jets, on sub-09: 2.52, no effect, harmless, not the base.
+4. sub-11: upgrade choice order, on sub-09: 2.69, kept, NEW BASE.
+5. Next (design only, waiting for approval): one change on sub-11 for more cubes = more upgrade offers.
+6. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
 
@@ -440,7 +445,7 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
 | sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
-| sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep, base for sub-10) |
+| sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep; base for sub-10, sub-06, sub-11) |
 | sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
-| sub-06 | 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1 | sub-09 + rooftop laser/lightning by jump + jets | pending (expected no readable signal: fires in ~3-6% of matches) |
-| sub-11 | ad43effd079ac41e56ff1ea5a4f56740342f1cc8 | sub-09 with the upgrade order changed (plating, gun_mag, gun_damage, laser_damage, armor, nanites, ...) | pending |
+| sub-06 | 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1 | sub-09 + rooftop laser/lightning by jump + jets | 2.52 (no effect vs 2.48, harmless; not the base) |
+| sub-11 | ad43effd079ac41e56ff1ea5a4f56740342f1cc8 | sub-09 with the upgrade order changed (plating, gun_mag, gun_damage, laser_damage, armor, nanites, ...) | 2.69 (+0.21 vs 2.48: keep, BEST, new base) |
