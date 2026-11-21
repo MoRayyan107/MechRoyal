@@ -14,6 +14,9 @@ built from small, readable rules, in priority order:
    the zone is not pressing, walk to a visible laser (or lightning) within 80 m and take
    it. Fire the weapon that works at the range: lightning within its 45 m arc range, the
    laser (charge, then release on target) out to its 280 m range, the gun as before.
+5. Long laser shots (sub-07): holding a ready laser, with exactly one enemy mech in view
+   at 45-240 m for 0.5 s, a clear line, and the zone not pressing, charge fully and fire at
+   it (laser only, no gun). Never starts a new charge with two or more mechs in view.
 
 Every tick runs inside try/except; if the main logic fails, a tiny fallback (walk to
 the zone centre) answers instead, so the mech never stands still because of a bug.
@@ -34,6 +37,11 @@ TWO_PI = 2.0 * math.pi
 SLICE_S = 0.006          # time we allow the route search per tick (seconds)
 
 # Upgrade preference: survival first. Anything not listed is ranked after these.
+# sub-07: long-range laser shots at a lone mech (option A)
+LONGSHOT_MIN_M = 45.0     # closer than this, sub-05b's own "within 45 m" rule already engages
+LONGSHOT_MAX_M = 240.0    # under the laser's 280 m; in practice our 200 m vision is the limit
+LONGSHOT_SEEN_S = 0.5     # the mech must have been listed this long without a break (no glimpse shots)
+
 UPGRADE_ORDER = ["plating", "armor", "nanites", "servos", "sensors", "capacitor", "jets",
                  "reactor", "gyros", "gun_rate", "gun_damage", "gun_velocity", "gun_mag"]
 
@@ -120,6 +128,10 @@ class Bot:
         reach = float((self.cfg.get("loot", {}) or {}).get("pickup_radius", 4.0))
         self.looter = loot.Looter(self.grid, reach) if self.grid is not None else None
         self.loot_errors = 0
+        self.view_since = {}            # enemy mech id -> time it has been listed since, without a break
+        self.ls_id = None               # sub-07: target of the long-range charge we started
+        self.ls_last = [0.0, 0.0, 0.0]  # its last known position
+        self.longshot_errors = 0
         gc.collect()
         gc.freeze()                     # the grid never changes: keep the GC from rescanning it
 
@@ -188,6 +200,9 @@ class Bot:
             act["move"] = [math.cos(move_yaw), math.sin(move_yaw)]
         else:
             act["move"] = [0.0, 0.0]
+        # sub-07: the long-range laser rule only runs while we are inside the zone and it is not pressing
+        zone_ok = bool(me.get("in_zone", True)) and not boost
+        self.track_views(obs, now)
 
         # ---- weapons (sub-04): fetch a better weapon when it is close and safe. The zone wins:
         # the rule is skipped whenever the zone boost condition above is on or we are outside.
@@ -239,7 +254,7 @@ class Bot:
         act["jump"] = jump
 
         # ---- 2. aim: face/return fire on an attacker, otherwise look where we go or scan
-        self.aim_and_fire(obs, act, now, move_yaw)
+        self.aim_and_fire(obs, act, now, move_yaw, zone_ok)
         return act
 
     # ------------------------------------------------------------------ helpers
@@ -335,7 +350,54 @@ class Bot:
         return (math.atan2(py - muzzle[1], px - muzzle[0]), math.atan2(pz - muzzle[2], max(horiz, 0.1)),
                 horiz, rng, (px, py, pz))
 
-    def fire_special(self, me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i) -> bool:
+    def track_views(self, obs: dict, now: float) -> None:
+        """Remember since when each enemy mech has been listed without a break (sub-07's 0.5 s rule)."""
+        listed = {m.get("id") for m in obs.get("mechs") or [] if m.get("kind") == "mech"}
+        for mid in list(self.view_since):
+            if mid not in listed:
+                del self.view_since[mid]
+        for mid in listed:
+            self.view_since.setdefault(mid, now)
+
+    def longshot_target(self, obs: dict, me: dict, now: float, zone_ok: bool, laser, muzzle):
+        """sub-07 option A: with a laser, shoot the single lone enemy mech in view at 45-240 m.
+
+        Returns the target dict, or None (rule off: the bot then does exactly what sub-05b does).
+        * Off when we hold no laser, outside the zone or with the zone pressing (a charge in progress is
+          then released: the trigger is simply not held, the beam fires, and we move at full speed).
+        * A charge we started keeps its target to the end, even if a second mech appears (there is no
+          cancel): aim at its current position if still listed, else at its last known position.
+        * A NEW charge only if: exactly one enemy mech listed, laser ready (cooldown <= 0.2 s), 45-240 m
+          away, listed without a break for >= LONGSHOT_SEEN_S, and a clear line by our building model.
+        """
+        if laser is None or not zone_ok:
+            self.ls_id = None
+            return None
+        mechs = [m for m in obs.get("mechs") or [] if m.get("kind") == "mech" and m.get("pos")]
+        x, y = me["pos"][0], me["pos"][1]
+        if float(laser.get("charge", 0) or 0) > 0 and self.ls_id is not None:
+            for m in mechs:
+                if m.get("id") == self.ls_id:
+                    self.ls_last = list(m["pos"])
+                    return m
+            return {"id": self.ls_id, "kind": "mech", "pos": list(self.ls_last), "vel": [0.0, 0.0, 0.0]}
+        self.ls_id = None
+        if len(mechs) != 1 or float(laser.get("cooldown", 0) or 0) > 0.2:
+            return None
+        m = mechs[0]
+        d = math.hypot(m["pos"][0] - x, m["pos"][1] - y)
+        if not (LONGSHOT_MIN_M <= d <= LONGSHOT_MAX_M):
+            return None
+        if now - self.view_since.get(m.get("id"), now) < LONGSHOT_SEEN_S:
+            return None
+        aim_pt = (m["pos"][0], m["pos"][1], m["pos"][2] + 4.5)
+        if self.grid is not None and not self.grid.los(muzzle, aim_pt):
+            return None
+        self.ls_id = m.get("id")
+        self.ls_last = list(m["pos"])
+        return m
+
+    def fire_special(self, me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i, longshot=False) -> bool:
         """Use lightning or the laser when the range suits it. Returns False to let the gun code run.
 
         * lightning: target within 90% of its range, aim straight at it (it is instant), fire when the
@@ -345,6 +407,7 @@ class Bot:
           at the target (hitscan, no lead), hold the trigger to charge, release when fully charged and
           on target. A clear line is required to start a charge.
         * the gun also fires in the same tick if its own lead solution happens to be on target.
+        * longshot=True (sub-07 targets): laser only, never lightning or the gun.
         """
         wcfg = self.cfg.get("weapons", {}) or {}
         tx, ty, tz = target["pos"]
@@ -358,7 +421,7 @@ class Bot:
         clear = self.grid is None or self.grid.los(muzzle, aim_pt)
         fire = [False, False]
         mode = None
-        if bolt_i is not None:
+        if bolt_i is not None and not longshot:
             w = weapons[bolt_i]
             st = w.get("stats") or wcfg.get("lightning", {}) or {}
             rng = float(st.get("range", 45.0))
@@ -387,7 +450,7 @@ class Bot:
         if mode is None:
             return False
         act["aim"] = [yaw, pitch]
-        if gun is not None and gun_i is not None:
+        if gun is not None and gun_i is not None and not longshot:
             gyaw, gpitch, ghoriz, grng, gpt = self.gun_solution(gun, target, muzzle)
             gtol = max(0.015, 2.0 / max(ghoriz, 1.0))
             if ghoriz < grng and clear and abs(wrap(cur[0] - gyaw)) < gtol and abs(cur[1] - gpitch) < gtol * 1.5:
@@ -395,7 +458,7 @@ class Bot:
         act["fire"] = fire
         return True
 
-    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw) -> None:
+    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw, zone_ok: bool = False) -> None:
         me = obs["self"]
         x, y, z = me["pos"]
         stats = me.get("stats", {}) or {}
@@ -425,6 +488,21 @@ class Bot:
                 laser_i = i
             elif w.get("kind") == "lightning":
                 bolt_i = i
+        # sub-07: nobody picked by sub-05b's rules (attacker / within 45 m) -> with a laser, maybe a long shot.
+        # Its own try/except: if it fails, we carry on exactly as sub-05b.
+        if target is None and laser_i is not None:
+            try:
+                t2 = self.longshot_target(obs, me, now, zone_ok, weapons[laser_i], muzzle)
+            except Exception:
+                t2 = None
+                self.ls_id = None
+                self.longshot_errors += 1
+                if self.longshot_errors <= 5:
+                    log(f"longshot failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if t2 is not None:
+                if self.fire_special(me, act, t2, muzzle, weapons, gun, gun_i, laser_i, bolt_i, longshot=True):
+                    return
+                # (fire_special declined: fall through with no target, exactly as sub-05b; never the gun)
         if target is not None and (laser_i is not None or bolt_i is not None):
             if self.fire_special(me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i):
                 return

@@ -171,8 +171,44 @@ if we have nothing better (it is harmless by construction); below = drop and go 
 - #9 removed the dead "laser charging" check: with a laser in slot 1 no pickup outranks it, so the loop returned
   "nothing near" with the same result (None, state off). Cannot change play.
 - Normal path identical: 0 differing actions vs sub-05 on the 300 recorded ticks and 3000 fuzz ticks.
-- Not tagged as submitted. Because #2 and #6 can change play (rarely), submit sub-05b before sub-06 so sub-06 builds on
-  a known score. Expect a score within noise of 2.31.
+- Submitted: scored 2.31, the same as sub-05.
+
+## sub-07: long laser shots at a lone mech (option A) - base sub-05b (2.31)
+
+Before sub-07 the laser already fired out to ~266 m, but only at a mech that hit us in the last 4 s (or within 45 m).
+sub-07 adds shots at a mech that has NOT hit us:
+- ON only if: we hold a laser that is ready (cooldown <= 0.2 s) or already charging this shot; exactly one enemy mech
+  listed in obs.mechs; it is 45-240 m away (vision is 200 m, so that is the practical limit; 240 leaves margin under
+  the 280 m laser range); listed without a break for >= 0.5 s; clear line by our building model; inside the zone and
+  the zone boost condition off.
+- Never starts a new charge with two or more mechs in view. sub-05b's attacker and within-45 m rules come first and
+  are unchanged. The gun (and lightning) never fire at a sub-07 target.
+- Full charge (0.75 s, 315 dmg, ~131 dmg/s vs ~61 for minimum charges). Start charging when aimed within 0.3 rad,
+  release when full and on target. Target leaves the line mid-charge: keep aiming at it (its last known position if
+  no longer listed) and release if the line clears; otherwise the server fires it on its own after 2 s held.
+- Off otherwise, always off without a laser: identical to sub-05b.
+- Edge cases (tested): laser in either slot works; after a take the equip delay shows as cooldown, so no charge until
+  <= 0.2 s; a charge in progress when the zone starts pressing is released (beam fires) and we move at full speed.
+- Recorded match (laser assumed in slot 1, ASSUMING SHOTS HIT): sub-07 starts charging at t=5.7 s and fires a full
+  charge at 6.4 s, 1.5 s before mech 10's first laser hit (7.9 s); then sub-05b's attacker rule fires at 8.9, 11.4 s as
+  before. Cost seen: at 18.9 s and 24.6 s it starts charges on a clear line that becomes blocked (20-26 s), and both are
+  auto-fired into the wall (21.5, 27.2 s): two wasted, noisy shots.
+- Reading the result vs 2.31: +0.1 or more = worth keeping; within +-0.1 = no effect; below = fall back to option B
+  (fire only at a mech not facing us) as sub-08.
+
+## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
+
+Reachable roof: pickup cell is a building whose roof height matches the pickup z within 1 m; roof region = connected
+cells at that height within 30 m; take-off = open cell next to that region nearest us with a straight walk; climb =
+roof height - ground at take-off <= 25 m; every cell from take-off to pickup is that roof (no higher section, no gap);
+energy >= 2 x climb + 30 (guess). Up: walk to take-off, push toward the pickup, jump + jet until feet are 1.5 m above
+the roof, stop jets over the roof, walk to the pickup, take within 3.5 m horizontal / 3.5 m vertical; remember the
+pickup position when it is out of sight. Gates: same as the ground rule + energy + 4 s extra in the zone check + at most
+2 rooftop attempts per match; ground pickup preferred unless the roof one is much closer (+1.5 x climb in the cost).
+Give up: energy < 8 below the roof, no height gain for 1.5 s while jetting, back on the ground after jetting (2 fails
+ban it), time > 2 x walk + 8 s, or a mech appears. Down: sub-01 routing walks off roofs; backstop after 10 s on a roof:
+walk back to the take-off edge. Recorded match: 8007 (climb 11 m) and 8001 (15 m) qualify; 8006 fails (23 m section in
+the way); 8003 is beyond 80 m. Estimated to fire in ~10-20% of matches; expected gain +0.1 to +0.2 (inside the noise).
 
 ## Remaining plan (until Sunday ~1:00 PM UK)
 sub-06 rooftop weapons by jump + jet; sub-07 laser fire at visible mechs out to ~220-260 m; sub-08 early duel with
@@ -187,7 +223,8 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 67ce118) |
 | sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | PASS p99 1.1-2.0 ms, max 2.1 ms (twice, built from 25e5e53) |
 | sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.9 ms, max 2.1 ms (twice, built from bd9167c) |
-| sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | see report |
+| sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 7b2029d) |
+| sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | see report |
 
 ## Submissions
 
@@ -199,4 +236,5 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | below 1.69 (exact score not reported) |
 | sub-04 | 25e5e53314c303c3df1be0db3c67e671003e61be | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | 1.98 |
 | sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
-| sub-05b | see `git rev-parse sub-05b` | sub-05 + loot fixes #2 #6 #8 #9 (not yet submitted) | not submitted |
+| sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
+| sub-07 | see `git rev-parse sub-07` | sub-05b + laser shots at a lone mech at 45-240 m (option A) | pending |
