@@ -190,9 +190,12 @@ def route_test(hello, rng, n, failures):
             arrived = f is not None and f.done and f.value(g.cell_of(x, y)) == 0.0
             if nr <= 25 and math.hypot(gx - x, gy - y) <= 8.0:
                 arrived = True      # endgame: the bot holds within 8 m of the centre
+            if not hasattr(b2, "spot") and math.hypot(gx - x, gy - y) <= goal_r + 0.5:
+                arrived = True      # sub-01 style bots stop as soon as they are inside the goal circle
             if arrived:
-                if b2.spot is not None and math.hypot(b2.spot[0] - gx, b2.spot[1] - gy) > goal_r + 3.0:
-                    failures.append(f"route {trial}: spot {b2.spot} outside goal circle r={goal_r:.0f}")
+                spot = getattr(b2, "spot", None)   # sub-02 style bots pick a spot; sub-01 style do not
+                if spot is not None and math.hypot(spot[0] - gx, spot[1] - gy) > goal_r + 3.0:
+                    failures.append(f"route {trial}: spot {spot} outside goal circle r={goal_r:.0f}")
                 centre_blocked = g.blocked[g.cell_of(gx, gy)]
                 # (the walker cannot jet onto a roof, so a centre inside a building is exempt)
                 if math.hypot(gx - x, gy - y) > goal_r + 6.0 and not (nr <= 25 and centre_blocked):

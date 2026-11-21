@@ -161,70 +161,7 @@ class Grid:
                                 break
 
         self.free_count = n - sum(self.blocked)
-        self.cover = self._build_cover(world)
         self.build_s = time.perf_counter() - t0
-
-    def _build_cover(self, world: dict):
-        """How hidden a mech standing on each cell is, from far-away eyes (higher = better).
-
-        * canopy: for every tree crown that spans mech height (3-9 m above our feet) over this cell, add
-          (crownR - distance from crown centre). A sight line through ~4 m of foliage is blocked, so a
-          value of 4+ means we are deep inside crowns.  Capped at 6.
-        * walls: tall building cells (roof above mech height) within 2 cells; each blocks a direction.
-          0.4 per cell, capped at 4.
-        """
-        n = self.n
-        nx = self.nx
-        canopy = array("d", [0.0]) * n
-        trees = world.get("trees") or {}
-        fields = trees.get("fields") or []
-        data = trees.get("data") or []
-        try:
-            k = len(fields)
-            ix = fields.index("crownX") if "crownX" in fields else fields.index("x")
-            iy = fields.index("crownY") if "crownY" in fields else fields.index("y")
-            iz = fields.index("z")
-            ih = fields.index("height")
-            ir = fields.index("crownR")
-            ib = fields.index("crownBase")
-        except ValueError:
-            k = 0
-        if k:
-            for s in range(0, len(data) - k + 1, k):
-                cx = data[s + ix]
-                cy = data[s + iy]
-                r = data[s + ir]
-                zb = data[s + iz] + data[s + ib]
-                zt = data[s + iz] + data[s + ih]
-                if r <= 0.5:
-                    continue
-                i0 = max(1, int((cx - r - self.minx) / CELL))
-                i1 = min(nx - 2, int((cx + r - self.minx) / CELL))
-                j0 = max(1, int((cy - r - self.miny) / CELL))
-                j1 = min(self.ny - 2, int((cy + r - self.miny) / CELL))
-                for j in range(j0, j1 + 1):
-                    py = self.miny + (j + 0.5) * CELL
-                    for i in range(i0, i1 + 1):
-                        c = j * nx + i
-                        d = math.hypot(self.minx + (i + 0.5) * CELL - cx, py - cy)
-                        if d < r:
-                            g = self.surf[c]
-                            if zb < g + 9.0 and zt > g + 3.0:
-                                canopy[c] += r - d
-        cover = array("d", [0.0]) * n
-        walls = bytearray(n)
-        for c in range(nx * 2, n - nx * 2):
-            if self.blocked[c] and self.top[c] > self.ground[c] + 9.0:
-                for dj in (-2, -1, 0, 1, 2):
-                    base = c + dj * nx
-                    for di in (-2, -1, 0, 1, 2):
-                        v = base + di
-                        if walls[v] < 250:
-                            walls[v] += 1
-        for c in range(n):
-            if not self.blocked[c]:
-                cover[c] = min(canopy[c], 6.0) + 0.4 * min(walls[c], 10)
-        return cover
 
     # ---------- lookups ----------
     def terrain_h(self, x: float, y: float) -> float:
