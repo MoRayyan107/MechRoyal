@@ -10,6 +10,10 @@ built from small, readable rules, in priority order:
 2. Defence: when something damages it, it turns its torso to face the attacker
    (front hits do 1/1.5 of rear hits) and returns gun fire if it can see it.
 3. Upgrades: survival upgrades first (max HP, armour, regen, speed).
+4. Weapons (sub-04, loot.py): when no mech is in view, none hit us in the last 4 s and
+   the zone is not pressing, walk to a visible laser (or lightning) within 60 m and take
+   it. Fire the weapon that works at the range: lightning within its 45 m arc range, the
+   laser (charge, then release on target) out to its 280 m range, the gun as before.
 
 Every tick runs inside try/except; if the main logic fails, a tiny fallback (walk to
 the zone centre) answers instead, so the mech never stands still because of a bug.
@@ -22,6 +26,7 @@ import math
 import time
 import traceback
 
+import loot
 import mechfight as mf
 import nav
 
@@ -112,6 +117,9 @@ class Bot:
         self.scan_yaw = 0.0
         self.slow_ticks = 0
         self.errors = 0
+        reach = float((self.cfg.get("loot", {}) or {}).get("pickup_radius", 4.0))
+        self.looter = loot.Looter(self.grid, reach) if self.grid is not None else None
+        self.loot_errors = 0
         gc.collect()
         gc.freeze()                     # the grid never changes: keep the GC from rescanning it
 
@@ -180,6 +188,29 @@ class Bot:
             act["move"] = [math.cos(move_yaw), math.sin(move_yaw)]
         else:
             act["move"] = [0.0, 0.0]
+
+        # ---- weapons (sub-04): fetch a better weapon when it is close and safe. The zone wins:
+        # the rule is skipped whenever the zone boost condition above is on or we are outside.
+        if self.looter is not None and not boost and me.get("in_zone", True):
+            try:
+                r = self.looter.update(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
+                                       ZoneModel.time_until_outside, ZoneModel.circle_at)
+            except Exception:
+                r = None
+                self.loot_errors += 1
+                if self.loot_errors <= 5:
+                    log(f"loot failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if r is not None:
+                yaw, pid, take_now, drop = r
+                if take_now:
+                    act["take"] = pid
+                    if drop is not None:
+                        act["drop"] = drop
+                    move_yaw = None
+                    act["move"] = [0.0, 0.0]
+                else:
+                    move_yaw = yaw
+                    act["move"] = [math.cos(yaw), math.sin(yaw)]
 
         # ---- stuck: commanded to move but barely moved in the last second -> jump and jet
         jump = False
@@ -278,6 +309,83 @@ class Bot:
                     self.attack_bearing = float(ev["bearing"])
                 self.attack_t = now
 
+    def gun_solution(self, gun, target, muzzle):
+        """Lead the target for the gun: returns (yaw, pitch, horizontal distance, range)."""
+        gs = (gun or {}).get("stats", {}) or self.gun_cfg
+        speed = float(gs.get("speed", 252.0))
+        rng = float(gs.get("range", 230.0))
+        tx, ty, tz = target["pos"]
+        vx, vy, vz = (target.get("vel") or [0, 0, 0])
+        aim_z = tz + (4.5 if target.get("kind") == "mech" else 1.75)
+        t_f = 0.0
+        for _ in range(2):
+            px, py, pz = tx + vx * t_f, ty + vy * t_f, aim_z + vz * t_f
+            t_f = math.dist((px, py, pz), muzzle) / speed
+        px, py, pz = tx + vx * t_f, ty + vy * t_f, aim_z + vz * t_f
+        horiz = math.hypot(px - muzzle[0], py - muzzle[1])
+        return (math.atan2(py - muzzle[1], px - muzzle[0]), math.atan2(pz - muzzle[2], max(horiz, 0.1)),
+                horiz, rng, (px, py, pz))
+
+    def fire_special(self, me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i) -> bool:
+        """Use lightning or the laser when the range suits it. Returns False to let the gun code run.
+
+        * lightning: target within 90% of its range, aim straight at it (it is instant), fire when the
+          torso is within a quarter of the cone and a building does not block the line; keep 10 energy
+          spare for jumping out of trouble.
+        * laser: target within 95% of its range and the laser ready (or already charging): aim straight
+          at the target (hitscan, no lead), hold the trigger to charge, release when fully charged and
+          on target. A clear line is required to start a charge.
+        * the gun also fires in the same tick if its own lead solution happens to be on target.
+        """
+        wcfg = self.cfg.get("weapons", {}) or {}
+        tx, ty, tz = target["pos"]
+        aim_pt = (tx, ty, tz + (4.5 if target.get("kind") == "mech" else 1.75))
+        horiz = math.hypot(aim_pt[0] - muzzle[0], aim_pt[1] - muzzle[1])
+        yaw = math.atan2(aim_pt[1] - muzzle[1], aim_pt[0] - muzzle[0])
+        pitch = math.atan2(aim_pt[2] - muzzle[2], max(horiz, 0.1))
+        cur = me.get("aim") or [yaw, pitch]
+        err_y = abs(wrap(cur[0] - yaw))
+        err_p = abs(cur[1] - pitch)
+        clear = self.grid is None or self.grid.los(muzzle, aim_pt)
+        fire = [False, False]
+        mode = None
+        if bolt_i is not None:
+            w = weapons[bolt_i]
+            st = w.get("stats") or wcfg.get("lightning", {}) or {}
+            rng = float(st.get("range", 45.0))
+            cone = math.radians(float(st.get("cone_deg", 30.0)))
+            cost = float(st.get("energy", 3.0))
+            if horiz <= rng * 0.9 and float(me.get("energy", 0)) >= cost + 10.0:
+                mode = "lightning"
+                if clear and err_y < cone / 4 and float(w.get("cooldown", 0)) <= 0.0:
+                    fire[bolt_i] = True
+        if mode is None and laser_i is not None:
+            w = weapons[laser_i]
+            st = w.get("stats") or wcfg.get("laser", {}) or {}
+            rng = float(st.get("range", 280.0))
+            full = float(st.get("charge", 0.75))
+            charge = float(w.get("charge", 0) or 0)
+            ready = float(w.get("cooldown", 0) or 0) <= 0.2
+            if horiz <= rng * 0.95 and (ready or charge > 0):
+                mode = "laser"
+                tol = max(0.01, 1.5 / max(horiz, 1.0))
+                on = err_y < tol and err_p < tol * 1.5
+                if charge > 0:
+                    # keep charging until full; then release (fire=False) once on target
+                    fire[laser_i] = not (charge >= full - 0.05 and on and clear)
+                elif clear and err_y < 0.3:
+                    fire[laser_i] = True          # start charging while the torso finishes turning
+        if mode is None:
+            return False
+        act["aim"] = [yaw, pitch]
+        if gun is not None and gun_i is not None:
+            gyaw, gpitch, ghoriz, grng, gpt = self.gun_solution(gun, target, muzzle)
+            gtol = max(0.015, 2.0 / max(ghoriz, 1.0))
+            if ghoriz < grng and clear and abs(wrap(cur[0] - gyaw)) < gtol and abs(cur[1] - gpitch) < gtol * 1.5:
+                fire[gun_i] = True
+        act["fire"] = fire
+        return True
+
     def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw) -> None:
         me = obs["self"]
         x, y, z = me["pos"]
@@ -297,9 +405,20 @@ class Bot:
                 target = min(close, key=lambda m: math.dist(m["pos"][:2], (x, y)))
 
         gun = None
-        for w in me.get("weapons") or []:
-            if w and w.get("kind") == "gun":
-                gun = w
+        gun_i = laser_i = bolt_i = None
+        weapons = me.get("weapons") or []
+        for i, w in enumerate(weapons[:2]):
+            if not w:
+                continue
+            if w.get("kind") == "gun":
+                gun, gun_i = w, i
+            elif w.get("kind") == "laser":
+                laser_i = i
+            elif w.get("kind") == "lightning":
+                bolt_i = i
+        if target is not None and (laser_i is not None or bolt_i is not None):
+            if self.fire_special(me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i):
+                return
         if target is not None and gun is not None:
             gs = gun.get("stats", {}) or self.gun_cfg
             speed = float(gs.get("speed", 252.0))
@@ -322,7 +441,9 @@ class Bot:
             clear = self.grid is None or self.grid.los(muzzle, (px, py, pz))
             if (horiz < rng and clear and abs(wrap(cur[0] - yaw)) < tol
                     and abs(cur[1] - pitch) < tol * 1.5):
-                act["fire"] = [True, False]
+                fire = [False, False]
+                fire[gun_i if gun_i is not None else 0] = True
+                act["fire"] = fire
             return
 
         if recent:

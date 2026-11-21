@@ -113,13 +113,51 @@ Recorded-match check (crude walker, mech 10 on its recorded track): starting at 
 sub-03 runs 14 m to (290,-255) and is hidden after 0.6 s (in mech 10's line 0.6 of 25 s, walked 23 m); sub-02 stays
 in its line 24.1 of 25 s while walking 112 m. Caveat: the same 4 m roof-height model decides and measures "hidden".
 
+## Design choices (sub-04: pick up a better weapon) - tests H3, base = sub-01
+
+sub-03 scored below sub-02: hiding and breaking line of sight did not help, so avoidance rules stop here.
+**Base:** sub-01. Commit 61951f51a9bb36a1a34bab95618596f96cd5759c on main restores sub-01's bot.py, nav.py,
+Dockerfile and .dockerignore (byte-identical to tag sub-01) and removes losbreak.py; sub-02 and sub-03 stay in main's
+history untouched. sub-04 is the next commit on top: new `loot.py` + weapon-aware firing in bot.py.
+
+Weapon pickups (protocol.md 6, 7): explicit `take: <id>` within 4 m horizontal / 4 m vertical; goes to the empty slot
+(slot 1 at spawn) or, with `drop: <slot>`, swaps; no two of a kind; a taken weapon cannot fire for max(1 s, its
+cooldown) (laser 1.65 s). Laser: hold to charge (0.15-0.75 s, 35-100% of 315), release fires a hitscan beam along the
+actual aim, 280 m, cooldown 1.65 s, half speed while charging, visible/audible. Lightning: instant, nearest target
+within 45 m and 30 deg of aim yaw with line of sight, 60 dmg, chains x2, 3 energy, 0.25 s. Mortar not fetched.
+Unclear in protocol.md: whether the 30 deg cone is +-15 or +-30 deg; we aim straight at the target.
+
+- **Loot rule ON** only if: no enemy mech listed in obs.mechs; no mech hit us in the last 4 s; we are inside the zone
+  and sub-01's boost condition is off; a visible pickup better than our slot 1 (laser > lightning > empty) lies within
+  **60 m** (about 5 s walk; other mechs spawn >= 130 m apart, so this stays in our own spawn area), on walkable ground
+  (not a roof: <= 2.5 m above the cell's walking height), reachable in a straight walk, no drone seen within 45 m of
+  it, inside the zone circle 5 s after we would arrive (10 m margin), and the zone edge reaches it no sooner than
+  walk there + 1.5x walk back to the goal circle + 20 s. Then walk straight at full speed and send `take` in reach
+  (`drop: 1` when swapping lightning for a laser). Give up for good after 2x the walk time + 4 s, or on take_failed
+  gone/have/full/busy.
+- **OFF** otherwise: the move is exactly sub-01's.
+- **Firing:** same target choice as sub-01 (attacker in the last 4 s, else any mech within 45 m). Lightning if the target
+  is within 90% of its range (aim straight at it, fire when within a quarter of the cone, line clear, energy >= cost +
+  10); else the laser if within 95% of its range and ready or charging (aim straight, no lead: hitscan; hold to charge,
+  release when fully charged and on target; a clear line needed to start); else the gun exactly as sub-01. The gun
+  also fires in the same tick if its own lead solution is on target.
+- **How we read the result:** +0.3 or more over 1.79 means H3 was right; within +-0.1 it was wrong.
+
+Recorded match (crude walker): of the nine pickups seen in 37 s, the four near spawn (8007 lightning 46 m, 8006
+lightning 78 m, 8001 laser 79 m, 8003 laser 133 m) are on rooftops 13-24 m up; the nearest ground pickup (8022 laser)
+was 134-151 m from the bot. So sub-04 takes nothing in that match and moves exactly like sub-01 (108 vs 109 m walked
+by t=36.8). With a synthetic laser on open ground 40 m from that spawn, sub-04 takes it after 3.2 s and resumes
+sub-01's route; with a mech in view the rule stays off. Rough estimate from the loot numbers: ~0.3 laser/lightning
+pickups on open ground within 60 m of a random point, so the rule fires in a minority of matches.
+
 ## Offline test results
 
 | Commit | tools/stress.py | check.py local | check.py container (sandbox flags) |
 | --- | --- | --- | --- |
 | sub-01 (step 0+1) | PASS: replay p99 6.2 ms, fuzz max 7.4 ms, routes 120/120 | PASS p99 6.4 ms | PASS p99 2.0 ms, max 2.1 ms |
 | sub-02 (hide) | PASS: replay p99 6.2 ms, fuzz p99 6.3 / max 7.1 ms, routes 114/120 to the spot (misses: walker stuck in pockets it cannot jet out of) | PASS p99 6.4 ms | PASS p99 1.3 ms, max 1.4 ms (twice) |
-| sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | see report |
+| sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 67ce118) |
+| sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | see report |
 
 ## Submissions
 
@@ -128,4 +166,5 @@ in its line 24.1 of 25 s while walking 112 m. Caveat: the same 4 m roof-height m
 | starter | (kit example) | walk to zone centre, shoot everything | 1.15 |
 | sub-01 | 68ec13514c315d95aa517df00a554491d1ca183e | step 0 + 1: zone routing, stuck recovery, return fire, survival upgrades | 1.79 |
 | sub-02 | a62d9a5a81595c0786c17316eade10e300ded656 | hide in cover, walk quietly, hold fire, endgame at the centre | 1.69 |
-| sub-03 | see `git rev-parse sub-03` | break line of sight with buildings while a mech sees us / just hit us (tests H1) | pending |
+| sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | pending (below sub-02; exact score not reported yet) |
+| sub-04 | see `git rev-parse sub-04` | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | pending |

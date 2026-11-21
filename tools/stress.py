@@ -125,6 +125,23 @@ def fake_obs(rng, grid, tick, base):
             {"id": "armor", "name": "a", "desc": "b"}, {"id": "jets", "name": "a", "desc": "b"}]}
     else:
         o["offer"] = None
+    # weapons on the ground near us, and sometimes a laser / lightning already in slot 1 (sub-04 code)
+    o["pickups"] = [{"id": 8000 + k, "kind": rng.choice(["laser", "lightning", "mortar"]),
+                     "pos": [x + rng.uniform(-70, 70) * rng.choice([1, 0.05]),
+                             y + rng.uniform(-70, 70) * rng.choice([1, 0.05]), z + rng.choice([0, 0, 12])]}
+                    for k in range(rng.choice([0, 0, 1, 4, 9]))]
+    gun = next((w for w in me.get("weapons") or [] if w and w.get("kind") == "gun"), None)
+    slot1 = rng.choice([None, None, "laser", "lightning"])
+    if slot1 == "laser":
+        slot1 = {"kind": "laser", "cooldown": rng.choice([0, 0, 0.8]), "charge": rng.choice([0, 0, 0.3, 0.75]),
+                 "stats": {"damage": 315, "charge": 0.75, "range": 280, "cooldown": 1.65}}
+    elif slot1 == "lightning":
+        slot1 = {"kind": "lightning", "cooldown": rng.choice([0, 0.1]),
+                 "stats": {"damage": 60, "range": 45, "cone_deg": 30, "energy": 3, "cooldown": 0.25}}
+    me["weapons"] = [gun, slot1]
+    if rng.random() < 0.1:
+        ev.append(rng.choice([{"type": "took", "id": 8001, "kind": "laser", "slot": 1},
+                              {"type": "take_failed", "id": 8002, "reason": rng.choice(["gone", "range", "have"])}]))
     # odd but schema-plausible shapes
     if rng.random() < 0.05:
         me["weapons"] = [None, None]
