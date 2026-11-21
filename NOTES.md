@@ -228,6 +228,9 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
   matches instead of 40%, before visibility losses.
 - Reading the result vs 2.31: +0.1 or more = keep 100 m; within +-0.1 = no effect, stay on 80 m; below 2.2 = 100 m is
   too far, drop it.
+- RESULT: 2.27, no effect. Drop 100 m, do not build on it; the radius stays 80 m (sub-05b). sub-08 stays in history;
+  main's bot files were restored to sub-05b's in the next commit.
+- Observation: weapon acquisition by radius is saturated: 60 -> 80 m gave +0.33, 80 -> 100 m gave nothing.
 
 ## Corrections after the rules check (21 Nov 2026, track page + kit)
 
@@ -250,7 +253,7 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
 
 ## Remaining plan (until Sunday ~1:00 PM UK)
 Base = best-scoring tag so far (sub-05b = 2.31 until sub-08's score is in). One change per submission.
-1. sub-08: ground weapon pickup radius 80 m -> 100 m (built, waiting for its score).
+1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
 2. sub-09: "get cubes" - walk to visible cubes within 60 m (and, possibly as its own submission, shoot visible ground
    crates within 60 m for their cube). Approved in principle; design questions answered before building.
 3. sub-06: rooftop weapons by jump + jets (design on file above, not built).
@@ -283,4 +286,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
-| sub-08 | see `git rev-parse sub-08` | sub-05b with ground pickup radius 100 m | pending |
+| sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
