@@ -128,6 +128,7 @@ class Bot:
         self.loot_errors = 0
         self.cuber = loot.CubeHunter(self.grid) if self.grid is not None else None   # sub-09
         self.cube_errors = 0
+        self.roofer = loot.RoofLooter(self.grid, reach) if self.grid is not None else None   # sub-06
         self.crate_pick = None          # sub-09: (aim point, crate id) chosen this tick, or None
         gc.collect()
         gc.freeze()                     # the grid never changes: keep the GC from rescanning it
@@ -213,7 +214,10 @@ class Bot:
                 if self.loot_errors <= 5:
                     log(f"loot events failed at tick {obs.get('tick')}: {traceback.format_exc()}")
         r = None
+        loot_spent0 = loot_prev0 = None
         if self.looter is not None and not boost and me.get("in_zone", True):
+            loot_spent0 = dict(self.looter.spent)       # sub-06: undo the ground timer if a roof pickup wins
+            loot_prev0 = self.looter.prev_t
             try:
                 r = self.looter.update(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
                                        ZoneModel.time_until_outside, ZoneModel.circle_at)
@@ -222,22 +226,49 @@ class Bot:
                 self.loot_errors += 1
                 if self.loot_errors <= 5:
                     log(f"loot failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+        # ---- rooftop weapons (sub-06): same gates as the ground rule; None = off, and then everything below
+        # runs exactly as sub-09. A roof pickup only wins over a ground one when it costs less (climb counted).
+        roof = None
+        if self.roofer is not None and not boost and me.get("in_zone", True):
+            ground_d = None
             if r is not None:
-                yaw, pid, take_now, drop = r
-                if take_now:
-                    act["take"] = pid
-                    if drop is not None:
-                        act["drop"] = drop
-                    move_yaw = None
-                    act["move"] = [0.0, 0.0]
-                else:
-                    move_yaw = yaw
-                    act["move"] = [math.cos(yaw), math.sin(yaw)]
+                gp = next((p for p in obs.get("pickups") or [] if p.get("id") == r[1] and p.get("pos")), None)
+                ground_d = math.hypot(gp["pos"][0] - x, gp["pos"][1] - y) if gp is not None else 0.0
+            try:
+                roof = self.roofer.update(obs, me, now, self.attack_t, zone, walk, self.goal,
+                                          ZoneModel.time_until_outside, ZoneModel.circle_at, ground_d,
+                                          self.looter.banned if self.looter is not None else set())
+            except Exception:
+                roof = None
+                self.roofer = None                       # a bug in the new rule: off for the rest of the match
+                log(f"roof rule failed at tick {obs.get('tick')}, off for the match: {traceback.format_exc()}")
+            if roof is not None and r is not None:
+                self.looter.spent = loot_spent0
+                self.looter.prev_t = loot_prev0
+                r = None
+        if roof is not None:
+            move_yaw = roof["yaw"]
+            act["move"] = [math.cos(move_yaw), math.sin(move_yaw)] if move_yaw is not None else [0.0, 0.0]
+            if roof["take"] is not None:
+                act["take"] = roof["take"]
+                if roof["drop"] is not None:
+                    act["drop"] = roof["drop"]
+        if r is not None:
+            yaw, pid, take_now, drop = r
+            if take_now:
+                act["take"] = pid
+                if drop is not None:
+                    act["drop"] = drop
+                move_yaw = None
+                act["move"] = [0.0, 0.0]
+            else:
+                move_yaw = yaw
+                act["move"] = [math.cos(yaw), math.sin(yaw)]
 
         # ---- cubes (sub-09): walk onto a close, safe cube. Weapons first: only when the weapon rule did nothing.
         zone_ok = bool(me.get("in_zone", True)) and not boost
         cube_yaw = None
-        if self.cuber is not None and r is None and zone_ok:
+        if self.cuber is not None and r is None and roof is None and zone_ok:
             try:
                 cube_yaw = self.cuber.update_cube(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
                                                   ZoneModel.time_until_outside, ZoneModel.circle_at)
@@ -252,7 +283,8 @@ class Bot:
         # ---- crates (sub-09): no weapon or cube to fetch -> shoot a close, safe ground crate, walking toward it
         # (its cube drops where it stands; walking the route instead would carry us out of range of it).
         self.crate_pick = None
-        if self.cuber is not None and r is None and cube_yaw is None and zone_ok and now - self.attack_t >= 4.0:
+        if (self.cuber is not None and r is None and roof is None and cube_yaw is None and zone_ok
+                and now - self.attack_t >= 4.0):
             gun = next((w for w in (me.get("weapons") or [])[:2] if w and w.get("kind") == "gun"), None)
             muzzle = (x, y, z + float((me.get("stats") or {}).get("muzzle_height", 7.0)))
             try:
@@ -275,18 +307,24 @@ class Bot:
 
         # ---- stuck: commanded to move but barely moved in the last second -> jump and jet
         jump = False
-        if self.stuck(now, x, y, move_yaw is not None):
+        # sub-06: while jetting up a wall we are not stuck, we are climbing; the roof rule's own "no height gain
+        # for 1.5 s" check does this job in that phase only. Everywhere else the stuck rule is unchanged.
+        roof_jet = roof is not None and roof["phase"] == "jet"
+        if self.stuck(now, x, y, move_yaw is not None and not roof_jet):
             self.unstick_until = now + 1.6
             # alternate a sidestep so we slide off whatever caught us
             self.unstick_dir = (self.unstick_dir + 1) % 3
             self.hist.clear()
-        if now < self.unstick_until and move_yaw is not None:
+        if now < self.unstick_until and move_yaw is not None and not roof_jet:
             side = (0.0, 0.7, -0.7)[self.unstick_dir]
             yaw = move_yaw + side
             act["move"] = [math.cos(yaw), math.sin(yaw)]
             if me.get("grounded", False):
                 jump = True
             boost = float(me.get("energy", 0)) > 8
+        elif roof is not None:
+            boost = roof["boost"]
+            jump = roof["jump"]
         act["boost"] = bool(boost)
         act["jump"] = jump
 

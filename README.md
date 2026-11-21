@@ -7,10 +7,12 @@ Score is placement, so the bot is built survival-first. Standard-library Python 
 | --- | --- |
 | `Dockerfile` | The submitted image (pinned `python:3.13.9-slim-bookworm` by digest). |
 | `bot.py` | Decision logic: zone, stuck recovery, defence, weapon choice, upgrades. |
-| `loot.py` | Safe weapon pickup (laser / lightning within 80 m when nobody is around), and (sub-09) cube pickup and crate shooting within 60 m. |
+| `loot.py` | Safe weapon pickup (laser / lightning within 80 m when nobody is around), (sub-09) cube pickup and crate shooting within 60 m, and (sub-06) rooftop laser / lightning by jump + jets. |
 | `nav.py` | Map grid (4 m cells) from `/arena`, time-sliced walking-distance field, line of sight. |
 | `mechfight.py` | The kit's protocol wrapper, unchanged. |
 | `tools/stress.py` | Offline tests: replay timing, fuzzed observations (incl. pickups and held weapons), a crude route walker. |
+| `tools/jetsim.py` | Our crude jump-and-jet simulator for the rooftop rule (guess-level physics from protocol.md). |
+| `tools/sidebyside.py` | Runs two bot versions on the same observations and compares every action. |
 | `NOTES.md` | Design log and every submitted commit with its score. |
 | `protocol.md`, `mechfight.schema.json`, `check/`, `arena/`, `python/`, `ts/`, `KIT_README.md` | The organisers' starter kit, kept for reference and testing. |
 

@@ -252,7 +252,7 @@ every gate unchanged.
 - Observation: cube/crate pickup by radius is saturated at 60 m, like weapons at 80 m.
 - The sub-10 Docker check result was never written into the table below ("see report"); the session that ran it was lost.
 
-## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
+## sub-06 design (rooftop weapons by jump + jets) - original design (built: see the next section)
 
 Reachable roof: pickup cell is a building whose roof height matches the pickup z within 1 m; roof region = connected
 cells at that height within 30 m; take-off = open cell next to that region nearest us with a straight walk; climb =
@@ -265,6 +265,74 @@ Give up: energy < 8 below the roof, no height gain for 1.5 s while jetting, back
 ban it), time > 2 x walk + 8 s, or a mech appears. Down: sub-01 routing walks off roofs; backstop after 10 s on a roof:
 walk back to the take-off edge. Recorded match: 8007 (climb 11 m) and 8001 (15 m) qualify; 8006 fails (23 m section in
 the way); 8003 is beyond 80 m. Estimated to fire in ~10-20% of matches; expected gain +0.1 to +0.2 (inside the noise).
+
+## sub-06: rooftop weapons by jump + jets (base sub-09 = 2.48) - BUILT 21 Nov
+
+New class `loot.RoofLooter`, wired into bot.py after the ground weapon rule. No new file in the image.
+- **Candidate** (each tick, only when no ground pickup is closer): a visible laser/lightning better than slot 1, within
+  80 m, whose 4 m cell is a building whose roof height is within 1 m of the pickup z. Roof = connected cells at that
+  height within 30 m. Take-off = an open cell next to that roof, with the next cell further out also open at the same
+  height (>= 8 m of open ground: not a narrow gap between two roofs, which the 5 m wide mech bridges), climb 1.2-25 m,
+  and the 1 m-sampled line from it to the pickup stays on that roof (no gap, no higher or lower section). We must reach
+  the take-off by a straight walk; energy >= 2 x climb + 30; no drone within 45 m of pickup or take-off; zone check =
+  the ground rule's (t_out >= there + 1.5 x back + 20 s) + 4 s, with there = walk + roof walk + climb/8 + 1 s, at both
+  the pickup and the take-off, and both inside the circle 5 s after arrival with a 10 m margin.
+- **vs ground pickup:** the roof one wins only if walk + roof walk + 1.5 x climb < the ground pickup's distance. If it
+  wins, the ground rule's give-up timer for that tick is undone (bot.py restores looter.spent / prev_t).
+- **Gates, every tick, also mid-attempt:** no mech listed; no hit of any kind (drones too) in the last 4 s; inside
+  the zone and the zone not pressing (bot.py does not call the rule then). Any gate fails -> None that tick, the bot is
+  sub-09; an attempt in the air is over (it was counted) and may restart from the take-off once the gates clear.
+- **Attempt:** walk (no boost) to within 3 m of the take-off; if energy < need, stand and regen; then push along the
+  checked line, jump, jet until the feet have been 1.5 m above the roof; then coast toward the pickup, jetting again
+  only if we sink below roof + 1.5 m before we are over the roof; landed = grounded with feet >= roof - 0.8 m. Walk to
+  the pickup and `take` within 3.5 m (with `drop: 1` if slot 1 holds lightning). The pickup position is remembered
+  while it is out of sight (from below, a roof pickup is usually hidden by the roof edge).
+- **Fail** (bans the pickup, counts toward 2): no height gain (0.3 m) for 1.5 s while still below roof + 1.5 m;
+  energy < 8 below the roof; grounded more than 2 m below the roof >= 0.3 s after the jump (or after landing); out of
+  time (2 x walk + 8 s, counted only on active ticks) after a jump. Out of time before a jump = give up, not a fail.
+  On the roof and the pickup not listed within 8 m = gone (ban, not a fail). At most 2 jumps per match; 2 fails = off.
+- **Stuck rule:** sub-01's stuck rule is unchanged everywhere EXCEPT during the jet phase itself (at most ~1.5-3 s),
+  where it is paused: jetting up a wall moves us < 2.5 m sideways per second, so it would fire after 1 s and sidestep
+  us 40 deg off the line. The rule's own "no height gain for 1.5 s" check replaces it there.
+- **Backstop:** armed at landing and after any failed jump. Still standing high (feet > 1.5 m above the cell's walking
+  height, within 50 m of the pickup) 10 s later, with the gates open and nothing else to do: walk back along the
+  checked line toward and past the take-off point until off. Ends when off, or 25 s after landing.
+- **Off:** None = the caller's sub-09 code path, unchanged.
+
+Jump-and-jet simulator (`tools/jetsim.py`, OUR model, not the game): 20 ticks/s; numbers from hello.config.mech and
+protocol 7 (walk 11.7, boost 19.5 on the ground, accel 58.5 / 12 in the air, gravity 22, jump 11, jets +34 capped at
+10 m/s, 15 energy/s, regen 18/s after 0.6 s, step-up 1.2 m, walls slide, ceilings stop jets, roof-edge landing and
+0.6 m/tick slide-off); the exact building prisms from world.json; vision = protocol 8 (eye z+8 to the pickup centre or
+top, 45 m any way, 200 m in 120 deg). GUESSES: air control aims at walk speed; wall contact = 12 points on the 2.5 m
+circle + centre; pickup centre 0.4 m / top 0.8 m above its pos; torso turns 0.4 rad per decision; no mechs pushing,
+no slope limit; roof spawn uniform over roof area. Check: 100 energy climbs 69 m in our model vs the protocol's
+"about 60 m": the model is ~15% optimistic on climbing; the energy need (2 x climb + 30) has ~30% margin over our cost.
+
+Results (offline, our model):
+- Recorded match, from its spawn, pickup listed every tick: 8007 (lightning, roof 12.8 m, climb 12.7 m): jump 1.3 s,
+  landed 3.9 s, taken 5.2 s, back on the ground 7.2 s (sub-09 routing walked off). 8001 (laser, 17.4 m, climb 14.6 m):
+  jump 7.7, landed 10.5, taken 11.2, ground 14.9 s. 8006 and 8003: no plan (higher section / beyond 80 m). With our
+  vision model none of the four is ever seen from that spawn (roofs above the eye), and mech 10 is listed from 4.9 s,
+  so in that match the rule never fires.
+- Random sweep (5 seeds x 200 rooftop pickups, starts 15-80 m away on open ground, pickup listed every tick, static
+  zone): 409 committed, 366 taken (89%); fails: 34 no height gain (mostly 3-6 m climbs into a section the 4 m grid does
+  not show, or an overhang over the take-off), 6 out of time, 4 back on the ground; 6 runs (1.5%) end the 45 s still
+  standing high (sub-09 then stands there until the zone moves; its routing walks/jets off then). Median take 5.9 s
+  after start; median take -> ground 12 s (the 10 s backstop wait: inside a static zone sub-09 just stands).
+- Same with our vision model (3 seeds x 200): 99 committed (17%), 86 taken; same failure kinds.
+- How often it fires (GUESS-level, `jetsim.py freq`): ~6.7 roof laser/lightning per match; from a spawn-like spot the
+  chance of at least one qualifying AND visible within 80 m is ~2.6%; with walking and scanning before a mech is seen,
+  perhaps 3-6% of matches. The old estimate (10-20%) ignored that a roof pickup is hidden from below. Expected effect
+  on the score: small, very likely inside the +-0.1 noise even if every fetch helps.
+- Gates (`jetsim.py gates`, 8007 case): mech listed mid-jet -> off that tick, then identical to the rule disabled
+  (same trajectory); mech gone after 2 s -> second attempt succeeds; hit mid-jet -> off 4 s, second attempt fails
+  (back on the ground), rule done; mech from the start -> never commits; crash mid-jet -> 300/300 answered, rule off.
+- Cost per tick: the rule itself max 0.26 ms (roof planning included, cached per pickup); fuzz 0.07 ms.
+- Worst case (guess): walk <= 80 m to the take-off (~7 s), up to 2 jumps of ~3 s each at ~1.5 energy/m (a 25 m climb
+  uses ~45 of >= 80 energy), ~10-15 s standing on a roof after the take before the backstop; a mech arriving mid-jet
+  sees us in the air with jets audible at 90 m (sound GUESS: not checked against house-bot behaviour), and we fall.
+  Budget limit per pickup: 2 x walk + 8 s of active time.
+- Reading vs 2.48: +0.1 or more keep; within +-0.1 no effect; below 2.38 drop.
 
 ## sub-08: ground weapon pickup radius 80 m -> 100 m (base sub-05b = 2.31)
 
@@ -310,8 +378,10 @@ Base = best-scoring tag so far: sub-09 = 2.48. One change per submission.
 1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
 2. sub-09: "get cubes" (cubes + crates within 60 m): 2.48, kept, new base.
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
-3. sub-06: rooftop weapons by jump + jets, on sub-09 (being built 21 Nov evening).
-4. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
+3. sub-06: rooftop weapons by jump + jets, on sub-09: built 21 Nov, submitted once; base stays sub-09 unless
+   sub-06 scores >= 2.58.
+4. sub-11: upgrade choice order (design proposed, not built).
+5. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
 
@@ -327,7 +397,8 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 7b2029d) |
 | sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.0-1.8 ms, max 2.1 ms (twice, built from 30afa6b) |
 | sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | PASS p99 1.3-1.4 ms, max 1.6 ms (twice, built from ef5de74) |
-| sub-10 (cube/crate 80 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.5 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-09). Fuzz with crates/cubes out to 100 m: p99 6.3 ms, max 9.0 ms. Side by side vs sub-09 with nothing at 60-80 m: 0/3000 random ticks (9600 crates/cubes at 0-60 and 80-100 m kept), 0/299 recorded. Injected crash in cube + crate code: 300/300 answered. Synthetic 70 m on open ground: cube collected at 5.6 s, plating picked, back on route at 5.8 s; crate destroyed at 1.6 s (7 shots, walking toward it), early reload, cube at 5.6 s, plating, route at 5.8 s; sub-09 ignores both | PASS p99 6.5 ms | see report |
+| sub-10 (cube/crate 80 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.5 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-09). Fuzz with crates/cubes out to 100 m: p99 6.3 ms, max 9.0 ms. Side by side vs sub-09 with nothing at 60-80 m: 0/3000 random ticks (9600 crates/cubes at 0-60 and 80-100 m kept), 0/299 recorded. Injected crash in cube + crate code: 300/300 answered. Synthetic 70 m on open ground: cube collected at 5.6 s, plating picked, back on route at 5.8 s; crate destroyed at 1.6 s (7 shots, walking toward it), early reload, cube at 5.6 s, plating, route at 5.8 s; sub-09 ignores both | PASS p99 6.5 ms | result lost with the old session (never written here) |
+| sub-06 (rooftop weapons, on sub-09) | Seeds 2-3 PASS: fuzz p99 7.4-8.5 ms, max 11.2-14.7 ms (machine noise: the rule itself max 0.07 ms in fuzz, 0.26 ms with real roof planning; sub-09 on the same machine max 6.5-8.5 ms); replay p99 6.2-6.4 ms. Seed 1 routes 56/60, same as sub-09 on this machine (58/60, 60/60 on seeds 2-3, identical). Side by side vs sub-09 (`tools/sidebyside.py`, seeds 1 and 2): recorded 300, fuzz without roof pickups 3000, fuzz with them 3000: 0 differing actions each (the fuzz never triggers the rule); injected crash in RoofLooter.update: 300/300 and 3000/3000 answered, 0 differ. Closed-loop tests in `tools/jetsim.py` (sweep, recorded, gates): see the sub-06 section | PASS p99 6.4 ms, max 6.6 ms | PASS p99 1.6-2.1 ms, max 3.3 ms (twice, working tree before commit; rerun from the exact commit below) |
 | sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.4 ms (4 runs, built from da09fcf) |
 
 ## Submissions
@@ -345,3 +416,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
 | sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep, base for sub-10) |
 | sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
+| sub-06 | tag sub-06 (full hash recorded in the commit after it) | sub-09 + rooftop laser/lightning by jump + jets | pending (expected no readable signal: fires in ~3-6% of matches) |
