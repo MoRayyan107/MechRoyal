@@ -380,7 +380,7 @@ Base = best-scoring tag so far: sub-09 = 2.48. One change per submission.
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
 3. sub-06: rooftop weapons by jump + jets, on sub-09: built 21 Nov, submitted once; base stays sub-09 unless
    sub-06 scores >= 2.58.
-4. sub-11: upgrade choice order (design proposed, not built).
+4. sub-11: upgrade choice order, on sub-09 (approved 21 Nov; bot.py and loot.py restored byte-identical to sub-09 first).
 5. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
