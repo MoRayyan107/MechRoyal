@@ -372,6 +372,13 @@ drones, then crates), plus the gun aim at the chosen drone. Everything else is s
   same as crate shooting. Whether drones draw hunters is not documented.
 - Expected gain (GUESS): +0.03 to +0.10; it may well read as no effect.
 - Reading vs 2.69: 2.79 or more keep; 2.59-2.79 no effect; below 2.59 drop. sub-11 stays the safe final candidate.
+- RESULT: 2.46 (-0.23 vs 2.69): a real drop, not noise. Dropped; no further drone work. bot.py and loot.py restored
+  byte-identical to sub-11 (commit da1790131299fc5ad8df4ee1ae37ced3a7cd62fc); sub-12 stays in history.
+- Likely reason (GUESS, nothing per match is visible to us): a shot drone chases and fires back, which costs HP,
+  stops regen and pulls us off route; with the hunter usually arriving early that costs more than 2 cubes are worth.
+  The offline scenario (one drone, nobody else) could not show that cost.
+- Observation: like sub-10, more fetching early is not free; the gains came from the upgrade order, not from more
+  risk-taking. Cube and drone ideas are exhausted.
 - Scenario (`tools/dronesim.py`, GUESS-level physics; the real Bot.act() in the loop): one drone at 50 m on open ground
   near the next circle's centre, nobody else, full magazine. 20 seeds: killed 20/20, time to kill median 2.15 s (worst
   2.35 s) from the start, 8 shots / 8 hits each, closest the drone got 40-41 m, damage taken median 50 (0-50), both cubes
@@ -452,7 +459,10 @@ Base = best-scoring tag so far: sub-11 = 2.69 (ad43effd079ac41e56ff1ea5a4f567403
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
 3. sub-06: rooftop weapons by jump + jets, on sub-09: 2.52, no effect, harmless, not the base.
 4. sub-11: upgrade choice order, on sub-09: 2.69, kept, NEW BASE.
-5. sub-12: shoot a nearby drone for its 2 cubes, on sub-11: built 21 Nov; keep only if >= 2.79.
+5. sub-12: shoot a nearby drone for its 2 cubes, on sub-11: 2.46, dropped (a real drop). No further drone work.
+   FINAL CANDIDATE: sub-11 = 2.69 (ad43effd079ac41e56ff1ea5a4f56740342f1cc8) unless something clearly beats it.
+   Risky changes stopped here. The only low-risk idea left (a small UPGRADE_ORDER reorder) fires in < 2% of
+   matches (GUESS from the uniform-offer model), so it is not planned.
 6. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
@@ -492,4 +502,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
 | sub-06 | 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1 | sub-09 + rooftop laser/lightning by jump + jets | 2.52 (no effect vs 2.48, harmless; not the base) |
 | sub-11 | ad43effd079ac41e56ff1ea5a4f56740342f1cc8 | sub-09 with the upgrade order changed (plating, gun_mag, gun_damage, laser_damage, armor, nanites, ...) | 2.69 (+0.21 vs 2.48: keep, BEST, new base) |
-| sub-12 | 9c203fb7943c67ee57e2f46e48bc4db9d3963569 | sub-11 + shoot a lone drone within 60 m for its 2 cubes (stop at 50 m) | pending |
+| sub-12 | 9c203fb7943c67ee57e2f46e48bc4db9d3963569 | sub-11 + shoot a lone drone within 60 m for its 2 cubes (stop at 50 m) | 2.46 (-0.23 vs 2.69: drop) |
