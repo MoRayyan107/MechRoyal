@@ -14,7 +14,11 @@ built from small, readable rules, in priority order:
 3. Hold fire: it only shoots back at whoever hit it in the last 4 s, or takes a
    nearly free kill. Not shooting keeps it silent and keeps HP regeneration on.
    When hit it turns to face the attacker (front hits do 1/1.5 of rear hits).
-4. Upgrades: survival upgrades first (max HP, armour, regen, speed).
+4. Break line of sight (sub-03, losbreak.py): while an enemy mech is in view or has
+   hit us in the last 4 s, run to the nearest spot within 48 m where a building (not a
+   tree) blocks its line to us, and stand there. The zone still wins when time is short;
+   with no such spot in reach, rules 1-3 apply unchanged.
+5. Upgrades: survival upgrades first (max HP, armour, regen, speed).
 
 Every tick runs inside try/except; if the main logic fails, a tiny fallback (walk to
 the zone centre) answers instead, so the mech never stands still because of a bug.
@@ -27,11 +31,13 @@ import math
 import time
 import traceback
 
+import losbreak
 import mechfight as mf
 import nav
 
 TWO_PI = 2.0 * math.pi
 SLICE_S = 0.006          # time we allow the route search per tick (seconds)
+LOS_SLICE_S = 0.005      # extra time we allow the line-of-sight cover search per tick
 QUIET_SPEED = 4.5        # m/s; mechs only make footstep sounds above sound.step_speed (5 m/s)
 QUIET_SLACK_S = 15.0     # walk quietly only if we would still beat the zone edge by this much
 ENDGAME_R = 25.0         # when the next circle is this small, stand at its centre (cover is moot)
@@ -108,6 +114,8 @@ class Bot:
             log(f"grid {self.grid.nx}x{self.grid.ny} built in {self.grid.build_s:.2f}s")
         except Exception:
             log("map load failed, using straight-line moves:\n" + traceback.format_exc())
+        self.losb = losbreak.LosBreaker(self.grid) if self.grid is not None else None
+        self.los_errors = 0
         self.field = None
         self.field_key = None
         self.goal = (0.0, 0.0, 0.0)     # target circle x, y, radius
@@ -133,7 +141,7 @@ class Bot:
     def act(self, obs: dict) -> dict:
         t_start = time.perf_counter()
         try:
-            act = self.decide(obs, t_start + SLICE_S)
+            act = self.decide(obs, t_start + SLICE_S, t_start + SLICE_S + LOS_SLICE_S)
         except Exception:
             self.errors += 1
             if self.errors <= 5 or self.errors % 200 == 0:
@@ -161,7 +169,7 @@ class Bot:
             return {}
 
     # ------------------------------------------------------------------ main logic
-    def decide(self, obs: dict, deadline: float) -> dict:
+    def decide(self, obs: dict, deadline: float, los_deadline: float) -> dict:
         me = obs["self"]
         now = float(obs["t"])
         x, y, z = me["pos"]
@@ -209,6 +217,29 @@ class Bot:
         else:
             act["move"] = [0.0, 0.0]
 
+        # ---- break line of sight (sub-03): overrides the move only while a mech is in view or
+        # just hit us, and never when the zone is pressing (boost above was set for the zone).
+        face_yaw = None
+        if self.losb is not None and not boost and me.get("in_zone", True):
+            try:
+                cx_, cy_, cr_ = ZoneModel.circle_at(zone, now + 5.0)
+                r = self.losb.update(obs, me, self.attacker, self.attack_bearing, self.attack_t, now,
+                                     (cx_, cy_, cr_), los_deadline, time.perf_counter)
+            except Exception:
+                r = None
+                self.los_errors += 1
+                if self.los_errors <= 5:
+                    log(f"losbreak failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if r is not None:
+                face_yaw = r[-1]
+                if r[0] == "hold":
+                    move_yaw = None
+                    act["move"] = [0.0, 0.0]
+                else:
+                    move_yaw = r[1]
+                    act["move"] = [math.cos(move_yaw), math.sin(move_yaw)]
+                    boost = float(me.get("energy", 0)) > 30
+
         # ---- stuck: commanded to move but barely moved in the last second -> jump and jet
         jump = False
         if self.stuck(now, x, y, move_yaw is not None):
@@ -227,7 +258,7 @@ class Bot:
         act["jump"] = jump
 
         # ---- 2. aim: face/return fire on an attacker, otherwise look where we go or scan
-        self.aim_and_fire(obs, act, now, move_yaw)
+        self.aim_and_fire(obs, act, now, move_yaw, face_yaw)
         return act
 
     # ------------------------------------------------------------------ helpers
@@ -325,8 +356,10 @@ class Bot:
         j1 = min(g.ny - 2, int((py + R - g.miny) / nav.CELL))
         inner2 = inner * inner
         R2 = R * R
-        npcs = list(self.npcs.values())
         avoid2 = NPC_AVOID_M * NPC_AVOID_M
+        # only drones that could be within NPC_AVOID_M of some cell in the search area matter
+        reach = R + NPC_AVOID_M + nav.CELL
+        npcs = [(a, b) for a, b in self.npcs.values() if (a - px) ** 2 + (b - py) ** 2 <= reach * reach]
         blocked = g.blocked
         cover = g.cover
         for j in range(j0, j1 + 1):
@@ -338,10 +371,9 @@ class Bot:
                 cx = g.minx + (i + 0.5) * nav.CELL
                 if (cx - gx) ** 2 + (cy - gy) ** 2 > inner2 or (cx - px) ** 2 + (cy - py) ** 2 > R2:
                     continue
-                if npcs and any((cx - a) ** 2 + (cy - b) ** 2 < avoid2 for a, b in npcs):
-                    continue
                 sc = cover[c] - math.hypot(cx - x, cy - y) / 40.0
-                if sc > best_s:
+                # same result as filtering drones first, but the drone test only runs for would-be winners
+                if sc > best_s and not (npcs and any((cx - a) ** 2 + (cy - b) ** 2 < avoid2 for a, b in npcs)):
                     best_s, best_c = sc, c
         if best_c < 0:
             self.spot = None
@@ -386,7 +418,7 @@ class Bot:
                     self.attack_bearing = float(ev["bearing"])
                 self.attack_t = now
 
-    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw) -> None:
+    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw, face_yaw=None) -> None:
         me = obs["self"]
         x, y, z = me["pos"]
         stats = me.get("stats", {}) or {}
@@ -440,6 +472,8 @@ class Bot:
         if recent:
             # hit by something we can't see: face it, front armour takes the hits
             act["aim"] = [self.attack_bearing, 0.0]
+        elif face_yaw is not None:
+            act["aim"] = [face_yaw, 0.0]           # breaking line of sight: keep the front armour on them
         elif move_yaw is not None:
             act["aim"] = [move_yaw, 0.0]
         else:

@@ -73,12 +73,53 @@ but small behaviour changes cascade through a match, so it is still noisy.
 - +-0.3: probably real. Keep it if up; if down, look for the cause before stacking another change on it.
 - +-0.5 or more: clearly real. If down, revert to the previous version and rethink.
 
+## Early-death investigation (after sub-02 = 1.69)
+
+1.79 vs 1.69 is noise; both mean dying ~14th, i.e. early. What we can observe: only the board score (and stderr tail
+on a rejected submission). stderr, debug drawings, per-match place/kills never reach us; house-bot behaviour is not
+documented. The kit's only match data is check/stream.jsonl.gz: slot 3 spawns at (320,-280), sees mech 10 at 139 m
+at t=4.9 s, mech 10 has a laser by t=7.9 s and kills it from 55-150 m by t=36.8 s (place 13), before the zone moves.
+No drones seen in 37 s. Spawns are >= 130 m apart but vision is 200 m and laser range 280 m.
+sub-02 from that spawn walks 181 m at 4.5 m/s (40 s), all of it within 200 m of mech 10, 42% on open ground.
+Hypotheses: H1 spawn neighbour snipes us in its line of sight (~60%); H2 quiet walking lengthens exposure (~15%);
+H3 we lose duels with only the gun (~15%); H4 drones (~7%); H5 facing/return fire (~3%); H6 zone (<2%).
+
+## Design choices (sub-03: break line of sight with buildings) - tests H1
+
+New module `losbreak.py`, wired into bot.py after the sub-02 move is computed; every other sub-02 rule unchanged.
+- **On** while an enemy mech is in obs.mechs (the server keeps listing a mech 5 s after it leaves view) or a mech
+  (id < 100) hit us in the last 4 s. **Off** otherwise, and also whenever the zone is pressing (outside the zone, or
+  the sub-02 boost condition is true): the zone wins.
+- Threats: nearest 3 enemy mechs within 300 m (laser range 280). A mech that hit us but is not listed is placed
+  120 m away along the damage bearing.
+- If where we stand is hidden from every threat: stand still, torso facing the nearest threat (front armour).
+  Otherwise walk straight, at full speed (boost if energy > 30), to the nearest cell within 48 m that is hidden from
+  every threat, reachable in a straight line over walkable cells, and inside the zone circle 5 s from now (3 m margin).
+- **48 m search distance**: about 4 s walking (2.5 s boosting), i.e. at most 1-2 laser shots (one every ~2.4 s) while
+  we cross; farther cover costs more exposure than it saves. With nothing in reach, sub-02 movement runs unchanged
+  (re-searched every 0.5 s).
+- **Hidden** = a building cell within 40 m of us along the line to the threat has a roof above the line from the
+  threat's eye (z+8) to the top of our mech (z+9, scaled by cubes). Blocking the top line also blocks the line to our
+  centre (it runs lower everywhere near us). Also required 2 m to each side of each line (our radius is 2.5 m).
+  Trees never count: they stop sight, not shots.
+- Cost: cells nearest-first with a 5 ms per-tick budget (resumes next tick); own try/except, so a bug there falls back
+  to sub-02 movement; decide() still has the per-tick fallback.
+- Also in this commit (speed only, same result): sub-02's spot picker tests drones only for would-be winners and
+  ignores drones far outside its search area. It caused the only answers over 12 ms in the fuzz test (up to 14 ms).
+- How we read the result: **+0.3 or more over ~1.7 means H1 was right; within +-0.1 it was wrong and H3 (pick up a
+  laser near spawn) is next.**
+
+Recorded-match check (crude walker, mech 10 on its recorded track): starting at the recorded position at t=4.9 s,
+sub-03 runs 14 m to (290,-255) and is hidden after 0.6 s (in mech 10's line 0.6 of 25 s, walked 23 m); sub-02 stays
+in its line 24.1 of 25 s while walking 112 m. Caveat: the same 4 m roof-height model decides and measures "hidden".
+
 ## Offline test results
 
 | Commit | tools/stress.py | check.py local | check.py container (sandbox flags) |
 | --- | --- | --- | --- |
 | sub-01 (step 0+1) | PASS: replay p99 6.2 ms, fuzz max 7.4 ms, routes 120/120 | PASS p99 6.4 ms | PASS p99 2.0 ms, max 2.1 ms |
 | sub-02 (hide) | PASS: replay p99 6.2 ms, fuzz p99 6.3 / max 7.1 ms, routes 114/120 to the spot (misses: walker stuck in pockets it cannot jet out of) | PASS p99 6.4 ms | PASS p99 1.3 ms, max 1.4 ms (twice) |
+| sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | see report |
 
 ## Submissions
 
@@ -86,4 +127,5 @@ but small behaviour changes cascade through a match, so it is still noisy.
 | --- | --- | --- | --- |
 | starter | (kit example) | walk to zone centre, shoot everything | 1.15 |
 | sub-01 | 68ec13514c315d95aa517df00a554491d1ca183e | step 0 + 1: zone routing, stuck recovery, return fire, survival upgrades | 1.79 |
-| sub-02 | see `git rev-parse sub-02` | hide in cover, walk quietly, hold fire, endgame at the centre | pending |
+| sub-02 | a62d9a5a81595c0786c17316eade10e300ded656 | hide in cover, walk quietly, hold fire, endgame at the centre | 1.69 |
+| sub-03 | see `git rev-parse sub-03` | break line of sight with buildings while a mech sees us / just hit us (tests H1) | pending |

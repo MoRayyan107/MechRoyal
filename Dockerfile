@@ -4,7 +4,7 @@ FROM python:3.13.9-slim-bookworm@sha256:b685a4fa58bb19d1814d78a1ec0f0208f3514527
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /bot
 # Standard library only: no packages to install.
-COPY mechfight.py nav.py bot.py /bot/
+COPY mechfight.py nav.py losbreak.py bot.py /bot/
 # Precompile at build time; the match disk is read-only.
 RUN python3 -m compileall -q /bot && chmod -R a+rX /bot
 USER 65534:65534
