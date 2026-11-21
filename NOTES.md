@@ -212,9 +212,51 @@ ban it), time > 2 x walk + 8 s, or a mech appears. Down: sub-01 routing walks of
 walk back to the take-off edge. Recorded match: 8007 (climb 11 m) and 8001 (15 m) qualify; 8006 fails (23 m section in
 the way); 8003 is beyond 80 m. Estimated to fire in ~10-20% of matches; expected gain +0.1 to +0.2 (inside the noise).
 
+## sub-08: ground weapon pickup radius 80 m -> 100 m (base sub-05b = 2.31)
+
+One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everything else is sub-05b.
+- Risk (guess-level spawn model: random walkable spawns inside 0.8 x start radius, >= 130 m apart): a pickup 80-100 m
+  away is closer to another spawn than to us in ~25% of cases (60-80 m band: 4%); within 70 m of another spawn 11%;
+  within 45 m 1%. 80-90 m: 18%; 90-100 m: 31%. Limits: our 200 m / 120 deg view points where we walk, so a neighbour
+  near the pickup is usually seen and the rule turns off at once (unless buildings/trees hide it - guess); a hit in
+  the last 4 s turns it off; zone gates unchanged; give-up after 2 x walk + 4 s.
+- Worst case: 8.5 s walk out, give-up after ~21 s of fetching; zone check unchanged (t_out >= there + 1.5 x back + 20 s,
+  inside the circle at arrival + 5 s with a 10 m margin, skipped while the zone presses).
+- Chosen: 100 m (a bigger step gives a clearer signal against +-0.1 noise). 90 m is the fallback if 100 m lands at
+  2.2-2.4 (half the added area, lower neighbour risk: 18% vs 25%).
+- Fires (guess): expected ground laser/lightning candidates ~0.53 at 80 m -> ~0.83 at 100 m, i.e. roughly 55% of
+  matches instead of 40%, before visibility losses.
+- Reading the result vs 2.31: +0.1 or more = keep 100 m; within +-0.1 = no effect, stay on 80 m; below 2.2 = 100 m is
+  too far, drop it.
+
+## Corrections after the rules check (21 Nov 2026, track page + kit)
+
+- Track page (joinbuilders.org/buildathon/tracks/builders), not the kit: practice = 48 matches against 15 house bots
+  (4 easy, 4 medium, 4 hard, 3 expert) "acting as one squad: they share vision, never fight each other, and hunt you
+  weakest first (one early, more as you thin them out, all of them late)". "Weak" is not defined. Our reading (guess):
+  the squad sends its weakest bots at us first. So in practice our place = 16 - house bots dead before us, and they
+  die only from our damage or (if at all) the zone: each kill is +1 place.
+- Leaderboard top is now about 6.06 (5.94-6.06 in the top 5). The "Top 32 cutoff 5.23" is NOT confirmed: the page
+  shows no cutoff.
+- Practice seeds are private and fixed all event (two runs of sub-05/sub-05b both gave 2.31).
+- The qualifier (top 32, 16 matches against other qualifiers) and the final (top 16, 64 matches, expert house bots
+  fill empty slots) use NEW seeds. Gains that depend on the house-bot squad may not carry over; HP, weapons and
+  survival gains are more likely to.
+- Kills do not hand us cubes: a killed mech DROPS its cubes + 2 on the ground (protocol 10), and our bot never walks
+  to cubes, so our upgrade code almost never runs.
+- The recorded match (check/stream.jsonl.gz) is probably NOT a practice match: 3 mechs died at 18-27 s while we only
+  ever saw mech 10, which a non-fighting squad cannot cause. Conclusions drawn from it (the sub-03 LOS-break case and
+  the sub-07 first-shot timing) are weaker than they looked.
+
 ## Remaining plan (until Sunday ~1:00 PM UK)
-sub-06 rooftop weapons by jump + jet; sub-07 laser fire at visible mechs out to ~220-260 m; sub-08 early duel with
-the spawn neighbour (propose first). Each based on the best-scoring tag so far.
+Base = best-scoring tag so far (sub-05b = 2.31 until sub-08's score is in). One change per submission.
+1. sub-08: ground weapon pickup radius 80 m -> 100 m (built, waiting for its score).
+2. sub-09: "get cubes" - walk to visible cubes within 60 m (and, possibly as its own submission, shoot visible ground
+   crates within 60 m for their cube). Approved in principle; design questions answered before building.
+3. sub-06: rooftop weapons by jump + jets (design on file above, not built).
+4. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
+   starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
+Stop building about 1:00 PM UK Sunday; final checks after that.
 
 ## Offline test results
 
@@ -226,7 +268,8 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | PASS p99 1.1-2.0 ms, max 2.1 ms (twice, built from 25e5e53) |
 | sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.9 ms, max 2.1 ms (twice, built from bd9167c) |
 | sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 7b2029d) |
-| sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | see report |
+| sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.0-1.8 ms, max 2.1 ms (twice, built from 30afa6b) |
+| sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | see report |
 
 ## Submissions
 
@@ -240,3 +283,4 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
+| sub-08 | see `git rev-parse sub-08` | sub-05b with ground pickup radius 100 m | pending |

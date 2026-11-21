@@ -7,7 +7,7 @@ Score is placement, so the bot is built survival-first. Standard-library Python 
 | --- | --- |
 | `Dockerfile` | The submitted image (pinned `python:3.13.9-slim-bookworm` by digest). |
 | `bot.py` | Decision logic: zone, stuck recovery, defence, weapon choice, upgrades. |
-| `loot.py` | Safe weapon pickup (laser / lightning within 80 m when nobody is around). |
+| `loot.py` | Safe weapon pickup (laser / lightning within 100 m when nobody is around). |
 | `nav.py` | Map grid (4 m cells) from `/arena`, time-sliced walking-distance field, line of sight. |
 | `mechfight.py` | The kit's protocol wrapper, unchanged. |
 | `tools/stress.py` | Offline tests: replay timing, fuzzed observations (incl. pickups and held weapons), a crude route walker. |
