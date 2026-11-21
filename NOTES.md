@@ -334,6 +334,31 @@ Results (offline, our model):
   Budget limit per pickup: 2 x walk + 8 s of active time.
 - Reading vs 2.48: +0.1 or more keep; within +-0.1 no effect; below 2.38 drop.
 
+## sub-11: upgrade choice order (base sub-09 = 2.48)
+
+One change: `bot.UPGRADE_ORDER`. bot.py and loot.py were first restored byte-identical to sub-09 (commit e075b80).
+- Old (sub-09): plating, armor, nanites, servos, sensors, capacitor, jets, reactor, gyros, gun_rate, gun_damage,
+  gun_velocity, gun_mag; laser/lightning upgrades unlisted (ranked after everything, first offered one wins).
+- New: plating, gun_mag, gun_damage, laser_damage, armor, nanites, laser_charge, gun_rate, lightning_range,
+  lightning_efficiency, gyros, gun_velocity, sensors, lightning_chain, servos, reactor, capacitor, jets, laser_pierce,
+  mortar_splash, mortar_reload, mortar_velocity: all 22 ids in hello.config.upgrades. The pick rule is unchanged: the
+  offered choice highest on the list; an id not on the list ranks after all listed ones (first such in the offer).
+- Why: with the old list ~42% of offers went to servos/sensors/capacitor/jets/reactor (nothing for a fight). Plating
+  stays first (picked whenever offered, as before). When it is not offered, take what wins the first fight sooner.
+  Duel model (GUESS: 1 cube, one 1400 HP gun-only hunter, both hit every shot): HP left after the kill: none 7%,
+  armor 15%, gun_damage 17%, plating 19%, gun_rate 20%, gun_mag 26% (20-round first burst, kill at 8.6 s vs 11.3 s).
+  At low hit rates the gun upgrades are worth less and armor relatively more: that is the main risk.
+- Offer model (GUESS: 3 choices drawn uniformly from the eligible pool): the pick differs from sub-09 on 52% of offers
+  with the gun only (286 possible offers), 59% holding a laser, 55% holding lightning (560 each). Gun only, new picks:
+  plating 23%, gun_mag 19%, gun_damage 16%, armor 13%, nanites 10%, gun_rate 7%, gyros 5%, gun_velocity 3%, other 4%.
+  Largest swaps: armor -> gun_mag 3.5%, armor -> gun_damage 3.1%, nanites -> gun_mag 3.1%, servos -> gun_mag 2.8%.
+  Full tables: `python tools/sidebyside.py --mode upgrades`.
+- Side effect that follows from the upgrade, not from code: with gun_mag (20 rounds) the existing idle reload rule
+  (ammo < mag / 3) reloads below 7 rounds instead of below 4.
+- What one submission can tell: picks are not visible to us. If ~30-50% of matches reach a cube (guess), ~15-25% of
+  matches get a different upgrade, so +0.1 or more is a real signal and +-0.1 most likely means too few matches changed.
+- Reading vs 2.48: +0.1 or more keep; within +-0.1 no effect; below 2.38 drop.
+
 ## sub-08: ground weapon pickup radius 80 m -> 100 m (base sub-05b = 2.31)
 
 One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everything else is sub-05b.
@@ -380,7 +405,7 @@ Base = best-scoring tag so far: sub-09 = 2.48. One change per submission.
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
 3. sub-06: rooftop weapons by jump + jets, on sub-09: built 21 Nov, submitted once; base stays sub-09 unless
    sub-06 scores >= 2.58.
-4. sub-11: upgrade choice order, on sub-09 (approved 21 Nov; bot.py and loot.py restored byte-identical to sub-09 first).
+4. sub-11: upgrade choice order, on sub-09: built 21 Nov (bot.py and loot.py restored byte-identical to sub-09 first).
 5. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
@@ -399,6 +424,7 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | PASS p99 1.3-1.4 ms, max 1.6 ms (twice, built from ef5de74) |
 | sub-10 (cube/crate 80 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.5 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-09). Fuzz with crates/cubes out to 100 m: p99 6.3 ms, max 9.0 ms. Side by side vs sub-09 with nothing at 60-80 m: 0/3000 random ticks (9600 crates/cubes at 0-60 and 80-100 m kept), 0/299 recorded. Injected crash in cube + crate code: 300/300 answered. Synthetic 70 m on open ground: cube collected at 5.6 s, plating picked, back on route at 5.8 s; crate destroyed at 1.6 s (7 shots, walking toward it), early reload, cube at 5.6 s, plating, route at 5.8 s; sub-09 ignores both | PASS p99 6.5 ms | result lost with the old session (never written here) |
 | sub-06 (rooftop weapons, on sub-09) | Seeds 2-3 PASS: fuzz p99 7.4-8.5 ms, max 11.2-14.7 ms (machine noise: the rule itself max 0.07 ms in fuzz, 0.26 ms with real roof planning; sub-09 on the same machine max 6.5-8.5 ms); replay p99 6.2-6.4 ms. Seed 1 routes 56/60, same as sub-09 on this machine (58/60, 60/60 on seeds 2-3, identical). Side by side vs sub-09 (`tools/sidebyside.py`, seeds 1 and 2): recorded 300, fuzz without roof pickups 3000, fuzz with them 3000: 0 differing actions each (the fuzz never triggers the rule); injected crash in RoofLooter.update: 300/300 and 3000/3000 answered, 0 differ. Closed-loop tests in `tools/jetsim.py` (sweep, recorded, gates): see the sub-06 section | PASS p99 6.4 ms, max 6.6 ms | PASS p99 1.6-2.1 ms (twice, working tree); PASS p99 3.4-3.9 ms, max 5.0 and 18.8 ms (twice, built from a git archive of 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1) |
+| sub-11 (upgrade order, on sub-09) | Seeds 1-3: fuzz p99 6.3 ms, max 6.5-8.0 ms; replay p99 6.2 ms; routes 56/60, 58/60, 60/60 (identical to sub-09 on this machine). Side by side vs sub-09 (`tools/sidebyside.py --mode upgrades`, seeds 1 and 2): recorded 300 and fuzz 3000 ticks: 0 differ without an offer pending (2721 / 2699 such fuzz ticks); on offer ticks only `pick` differs; all 1406 possible offers: pick differs on 790, nothing else differs. Injected crash (Bot.decide raising every tick in both): 300/300, 3000/3000, 1406/1406 answered by the fallback, 0 differ without an offer | PASS p99 6.5 ms | see below |
 | sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.4 ms (4 runs, built from da09fcf) |
 
 ## Submissions
@@ -417,3 +443,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep, base for sub-10) |
 | sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
 | sub-06 | 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1 | sub-09 + rooftop laser/lightning by jump + jets | pending (expected no readable signal: fires in ~3-6% of matches) |
+| sub-11 | tag sub-11 (full hash recorded in the commit after it) | sub-09 with the upgrade order changed (plating, gun_mag, gun_damage, laser_damage, armor, nanites, ...) | pending |
