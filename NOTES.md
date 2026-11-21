@@ -195,6 +195,8 @@ sub-07 adds shots at a mech that has NOT hit us:
   auto-fired into the wall (21.5, 27.2 s): two wasted, noisy shots.
 - Reading the result vs 2.31: +0.1 or more = worth keeping; within +-0.1 = no effect; below = fall back to option B
   (fire only at a mech not facing us) as sub-08.
+- RESULT: 2.27, no effect. Base stays sub-05b. sub-07's code stays in history; main's bot.py was restored to sub-05b's
+  (commit after 30afa6b) before sub-08.
 
 ## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
 
@@ -237,4 +239,4 @@ the spawn neighbour (propose first). Each based on the best-scoring tag so far.
 | sub-04 | 25e5e53314c303c3df1be0db3c67e671003e61be | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | 1.98 |
 | sub-05 | bd9167c47aaa8d41cfef977231f9340f96eb93e8 | sub-04 with ground pickup radius 80 m | 2.31 (best so far, new base) |
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
-| sub-07 | see `git rev-parse sub-07` | sub-05b + laser shots at a lone mech at 45-240 m (option A) | pending |
+| sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
