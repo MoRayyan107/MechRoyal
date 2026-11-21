@@ -127,8 +127,8 @@ class Looter:
 
 
 # ----------------------------------------------------------------------------- sub-09: get cubes
-CUBE_M = 80.0             # walk to a visible cube this close (~7 s walk; sub-10, sub-09 used 60 m)
-CRATE_M = 80.0            # shoot a visible ground crate this close (its cube must be fetchable too; sub-09: 60 m)
+CUBE_M = 60.0             # walk to a visible cube this close (~5 s walk)
+CRATE_M = 60.0            # shoot a visible ground crate this close (its cube must be fetchable too)
 CRATE_MIN_AMMO = 9        # start on a crate only with this many rounds (300 HP / 45 = 7 hits + misses)
 CRATE_MAX = 4             # crates started per match, to cap the noise (gun 320 m, crate 220 m)
 CRATE_GIVEUP_S = 6.0      # stop aiming at a crate that is still standing after this long

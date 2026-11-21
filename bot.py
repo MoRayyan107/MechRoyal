@@ -15,7 +15,7 @@ built from small, readable rules, in priority order:
    it. Fire the weapon that works at the range: lightning within its 45 m arc range, the
    laser (charge, then release on target) out to its 280 m range, the gun as before.
 5. Cubes (sub-09, loot.CubeHunter): with the same safety gates, walk onto a visible cube
-   within 80 m (weapons first), and shoot a visible ground crate within 80 m with the gun
+   within 60 m (weapons first), and shoot a visible ground crate within 60 m with the gun
    while walking toward it (its cube drops there; >= 9 rounds to start, at most 4 crates a
    match), reloading early after.
    Each cube is +4% HP and damage, and the 1st, 3rd, 6th ... bring an upgrade (plating first).

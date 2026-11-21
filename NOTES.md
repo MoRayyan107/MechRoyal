@@ -247,6 +247,10 @@ every gate unchanged.
 - Fires (guess): ground crates in range 0.46 -> 0.88 on average, i.e. at least one in ~59% of matches instead of ~37%,
   before visibility losses; cubes scale the same way.
 - Reading the result vs 2.48: +0.1 or more = keep 80 m; within +-0.1 = no effect, stay on 60 m; below 2.38 = drop it.
+- RESULT: 2.44, no effect. Drop 80 m; cube and crate radius stays 60 m (sub-09). sub-10 stays in history; main's bot
+  files (bot.py, loot.py, README.md) were restored byte-identical to tag sub-09 in the next commit, as the base for sub-06.
+- Observation: cube/crate pickup by radius is saturated at 60 m, like weapons at 80 m.
+- The sub-10 Docker check result was never written into the table below ("see report"); the session that ran it was lost.
 
 ## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
 
@@ -302,11 +306,11 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
   the sub-07 first-shot timing) are weaker than they looked.
 
 ## Remaining plan (until Sunday ~1:00 PM UK)
-Base = best-scoring tag so far (sub-05b = 2.31 until sub-08's score is in). One change per submission.
+Base = best-scoring tag so far: sub-09 = 2.48. One change per submission.
 1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
 2. sub-09: "get cubes" (cubes + crates within 60 m): 2.48, kept, new base.
-   sub-10: cube and crate radius 60 m -> 80 m (built, waiting for its score).
-3. sub-06: rooftop weapons by jump + jets (design on file above, not built).
+   sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
+3. sub-06: rooftop weapons by jump + jets, on sub-09 (being built 21 Nov evening).
 4. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
@@ -340,4 +344,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
 | sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
 | sub-09 | ef5de74c8756f219470170cbabc3f3a217b57a69 | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | 2.48 (+0.17 vs 2.31: keep, base for sub-10) |
-| sub-10 | see `git rev-parse sub-10` | sub-09 with cube and crate radius 80 m | pending |
+| sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
