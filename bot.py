@@ -11,7 +11,7 @@ built from small, readable rules, in priority order:
    (front hits do 1/1.5 of rear hits) and returns gun fire if it can see it.
 3. Upgrades: survival upgrades first (max HP, armour, regen, speed).
 4. Weapons (sub-04, loot.py): when no mech is in view, none hit us in the last 4 s and
-   the zone is not pressing, walk to a visible laser (or lightning) within 60 m and take
+   the zone is not pressing, walk to a visible laser (or lightning) within 80 m and take
    it. Fire the weapon that works at the range: lightning within its 45 m arc range, the
    laser (charge, then release on target) out to its 280 m range, the gun as before.
 

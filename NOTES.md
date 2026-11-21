@@ -150,6 +150,18 @@ by t=36.8). With a synthetic laser on open ground 40 m from that spawn, sub-04 t
 sub-01's route; with a mech in view the rule stays off. Rough estimate from the loot numbers: ~0.3 laser/lightning
 pickups on open ground within 60 m of a random point, so the rule fires in a minority of matches.
 
+## sub-05: ground pickup radius 60 m -> 80 m (base sub-04 = 1.98, the best so far)
+
+Only `loot.LOOT_M` changes. All gates as sub-04. Worst case: ~6.8 s out instead of ~5.1 s; give-up after
+2 x walk + 4 s (~17.7 s at 80 m). Guess: a far-side pickup can take us 50-80 m closer to a spawn neighbour before it
+comes into view. Recorded match: no change (nearest ground pickup 134 m). Synthetic: a laser 70 m away on open ground
+is taken at t=5.7 s by sub-05 and ignored by sub-04. Reading: +0.3 over 1.98 = keep; within +-0.1 = noise, keep only
+if we have nothing better (it is harmless by construction); below = drop and go back to sub-04.
+
+## Remaining plan (until Sunday ~1:00 PM UK)
+sub-06 rooftop weapons by jump + jet; sub-07 laser fire at visible mechs out to ~220-260 m; sub-08 early duel with
+the spawn neighbour (propose first). Each based on the best-scoring tag so far.
+
 ## Offline test results
 
 | Commit | tools/stress.py | check.py local | check.py container (sandbox flags) |
@@ -157,7 +169,8 @@ pickups on open ground within 60 m of a random point, so the rule fires in a min
 | sub-01 (step 0+1) | PASS: replay p99 6.2 ms, fuzz max 7.4 ms, routes 120/120 | PASS p99 6.4 ms | PASS p99 2.0 ms, max 2.1 ms |
 | sub-02 (hide) | PASS: replay p99 6.2 ms, fuzz p99 6.3 / max 7.1 ms, routes 114/120 to the spot (misses: walker stuck in pockets it cannot jet out of) | PASS p99 6.4 ms | PASS p99 1.3 ms, max 1.4 ms (twice) |
 | sub-03 (break LOS) | PASS on seeds 1, 2, 4: fuzz p99 8.0-8.2 ms, max 8.6-9.5 ms; replay p99 6.2 ms. Seed 3 routes 36/40, identical to sub-02's own code on that seed. Fault injection: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 67ce118) |
-| sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | see report |
+| sub-04 (loot, on sub-01) | Seeds 1-3 PASS: fuzz p99 6.5-9.0 ms, max 7.2-14.1 ms (the slow ticks are sub-01's own new-circle setup; loot code max 0.09 ms); replay p99 6.2-6.4 ms. Default seed: routes 56/60 = FAIL at the 95% bar, identical for the restored sub-01 bot with the same test file (walker pockets). Injected loot crash: 300/300 answered with sub-01 moves | PASS p99 6.5 ms | PASS p99 1.1-2.0 ms, max 2.1 ms (twice, built from 25e5e53) |
+| sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | see report |
 
 ## Submissions
 
@@ -166,5 +179,6 @@ pickups on open ground within 60 m of a random point, so the rule fires in a min
 | starter | (kit example) | walk to zone centre, shoot everything | 1.15 |
 | sub-01 | 68ec13514c315d95aa517df00a554491d1ca183e | step 0 + 1: zone routing, stuck recovery, return fire, survival upgrades | 1.79 |
 | sub-02 | a62d9a5a81595c0786c17316eade10e300ded656 | hide in cover, walk quietly, hold fire, endgame at the centre | 1.69 |
-| sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | pending (below sub-02; exact score not reported yet) |
-| sub-04 | see `git rev-parse sub-04` | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | pending |
+| sub-03 | 67ce118653ddc37c23113584e408cd30c6171c73 | break line of sight with buildings while a mech sees us / just hit us (tests H1) | below 1.69 (exact score not reported) |
+| sub-04 | 25e5e53314c303c3df1be0db3c67e671003e61be | base sub-01 + pick up a laser/lightning within 60 m when safe, fire the weapon that suits the range (tests H3) | 1.98 |
+| sub-05 | see `git rev-parse sub-05` | sub-04 with ground pickup radius 80 m | pending |

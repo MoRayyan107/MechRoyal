@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 
-LOOT_M = 60.0          # ~5 s walk: stays inside our own spawn area (other mechs spawn >= 130 m away)
+LOOT_M = 80.0          # ~7 s walk (sub-05; sub-04 used 60 m). Other mechs spawn >= 130 m away
 SAFE_HIT_S = 4.0
 ZONE_SLACK_S = 20.0
 DRONE_M = 45.0         # drones attack mechs within 45 m of them
