@@ -40,15 +40,50 @@
 - **Never crash**: `decide()` is wrapped; on any exception a minimal fallback (walk to the next zone centre,
   boost if outside) answers. Missing map files leave the bot on straight-line moves.
 
+## Design choices (sub-02: hide, move quietly, hold fire)
+
+Diagnosis after sub-01 (1.79, i.e. dying about 14th): most likely killer is the house-bot squad finding us standing
+in the open (sub-01 stopped at the first cell inside the circle, usually open ground). Confidence ~65%; no death
+telemetry exists. protocol.md says nothing about house bots: "weakest first" is not defined in the kit, so we cannot
+rely on HP making us a less attractive target; staying unseen and alive is what we can control.
+Ranking of planned steps by expected gain: step 2 (hide) > step 5 (endgame, but only pays if alive at ~415 s) >
+step 3 (looting: needs shooting crates or drones, noisy, stops regen). Step 2 has medium risk, step 3 the highest.
+
+- **Cover map** (built at start-up, adds ~0.05 s): per 4 m cell, canopy = sum of (crownR - distance) over tree crowns
+  spanning 3-9 m above our feet (a sight line through ~4 m of foliage is blocked), capped at 6; plus 0.4 per tall
+  building cell (roof above mech height) within 2 cells, capped at 4. Trees do not stop shots, only sight.
+- **Hiding spot**, picked each time the zone announces a new circle: the walkable cell with the highest
+  cover - (distance from us / 40 m), within 80% of the goal radius and 120 m of us (or of the circle point nearest
+  us), at least 55 m from any drone we have seen (they aggro at 45 m). Re-picked if a drone shows up within 55 m of
+  the spot (at most every 10 s). The distance field now leads to the spot; once on it we stand still and scan.
+- **Quiet walking**: footsteps are only made above 5 m/s, so we walk at 4.5 m/s when walking that slowly still beats
+  the zone edge by 15 s and nothing has hit us in the last 4 s. Otherwise full speed; boosting rules unchanged.
+- **Hold fire**: no more engaging mechs just for being within 45 m. Fire only at whoever hit us in the last 4 s,
+  or a nearly free kill (visible mech with HP <= 2 gun hits, within 100 m, clear line). Keeps regen on and us silent.
+- **Endgame**: when the next radius is <= 25 m, the spot is the circle centre (within 8 m), ignoring cover: everyone
+  is inside sensor range then and the centre stays in the zone longest. If the centre is inside a building we walk at
+  it and the stuck rule jumps/jets us onto the roof. Upgrade order still starts with plating and armour.
+- Not in this change: looting (step 3).
+
+## How we read score changes
+
+Practice seeds are fixed, so the same bot meets the same 48 matches; a difference is mostly caused by our change,
+but small behaviour changes cascade through a match, so it is still noisy.
+- +-0.1: no real effect. Keep whichever version is simpler.
+- +-0.3: probably real. Keep it if up; if down, look for the cause before stacking another change on it.
+- +-0.5 or more: clearly real. If down, revert to the previous version and rethink.
+
 ## Offline test results
 
 | Commit | tools/stress.py | check.py local | check.py container (sandbox flags) |
 | --- | --- | --- | --- |
-| step 0+1 | PASS: replay p99 6.2 ms, fuzz max 7.4 ms, routes 120/120 | PASS p99 6.4 ms | PASS p99 2.0 ms, max 2.1 ms |
+| sub-01 (step 0+1) | PASS: replay p99 6.2 ms, fuzz max 7.4 ms, routes 120/120 | PASS p99 6.4 ms | PASS p99 2.0 ms, max 2.1 ms |
+| sub-02 (hide) | PASS: replay p99 6.2 ms, fuzz p99 6.3 / max 7.1 ms, routes 114/120 to the spot (misses: walker stuck in pockets it cannot jet out of) | PASS p99 6.4 ms | PASS p99 1.3 ms, max 1.4 ms (twice) |
 
 ## Submissions
 
 | Tag | Commit | Change | Score (48 matches) |
 | --- | --- | --- | --- |
 | starter | (kit example) | walk to zone centre, shoot everything | 1.15 |
-| sub-01 | see `git rev-parse sub-01` | step 0 + 1: zone routing, stuck recovery, return fire, survival upgrades | pending |
+| sub-01 | 68ec13514c315d95aa517df00a554491d1ca183e | step 0 + 1: zone routing, stuck recovery, return fire, survival upgrades | 1.79 |
+| sub-02 | see `git rev-parse sub-02` | hide in cover, walk quietly, hold fire, endgame at the centre | pending |

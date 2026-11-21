@@ -164,7 +164,7 @@ def route_test(hello, rng, n, failures):
         ok = False
         t = 0.0
         start_d = math.hypot(gx - x, gy - y)
-        budget = 30 + 3.0 * start_d / 11.7
+        budget = 30 + 3.0 * start_d / 4.5   # the bot walks quietly (4.5 m/s) when the zone allows
         while t < budget:
             o = {"type": "obs", "tick": int(t * 20), "t": t, "alive": 16,
                  "self": {"id": 0, "pos": [x, y, g.surf[g.cell_of(x, y)]], "vel": [0, 0, 0], "aim": [0, 0],
@@ -186,7 +186,17 @@ def route_test(hello, rng, n, failures):
                 y = ny_
             t += 0.1
             f = b2.field
-            if math.hypot(gx - x, gy - y) <= goal_r + 0.5 or (f is not None and f.done and f.value(g.cell_of(x, y)) == 0.0):
+            # success = standing on the chosen spot (field value 0), which must lie inside the goal circle
+            arrived = f is not None and f.done and f.value(g.cell_of(x, y)) == 0.0
+            if nr <= 25 and math.hypot(gx - x, gy - y) <= 8.0:
+                arrived = True      # endgame: the bot holds within 8 m of the centre
+            if arrived:
+                if b2.spot is not None and math.hypot(b2.spot[0] - gx, b2.spot[1] - gy) > goal_r + 3.0:
+                    failures.append(f"route {trial}: spot {b2.spot} outside goal circle r={goal_r:.0f}")
+                centre_blocked = g.blocked[g.cell_of(gx, gy)]
+                # (the walker cannot jet onto a roof, so a centre inside a building is exempt)
+                if math.hypot(gx - x, gy - y) > goal_r + 6.0 and not (nr <= 25 and centre_blocked):
+                    failures.append(f"route {trial}: stopped {math.hypot(gx - x, gy - y):.0f} m from centre, goal r={goal_r:.0f} (next r={nr})")
                 ok = True
                 break
         if ok:
