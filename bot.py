@@ -14,6 +14,11 @@ built from small, readable rules, in priority order:
    the zone is not pressing, walk to a visible laser (or lightning) within 80 m and take
    it. Fire the weapon that works at the range: lightning within its 45 m arc range, the
    laser (charge, then release on target) out to its 280 m range, the gun as before.
+5. Cubes (sub-09, loot.CubeHunter): with the same safety gates, walk onto a visible cube
+   within 60 m (weapons first), and shoot a visible ground crate within 60 m with the gun
+   while walking toward it (its cube drops there; >= 9 rounds to start, at most 4 crates a
+   match), reloading early after.
+   Each cube is +4% HP and damage, and the 1st, 3rd, 6th ... bring an upgrade (plating first).
 
 Every tick runs inside try/except; if the main logic fails, a tiny fallback (walk to
 the zone centre) answers instead, so the mech never stands still because of a bug.
@@ -32,6 +37,7 @@ import nav
 
 TWO_PI = 2.0 * math.pi
 SLICE_S = 0.006          # time we allow the route search per tick (seconds)
+CRATE_STOP_M = 8.0       # sub-09: stop walking toward a crate we are shooting this close to it
 
 # Upgrade preference: survival first. Anything not listed is ranked after these.
 UPGRADE_ORDER = ["plating", "armor", "nanites", "servos", "sensors", "capacitor", "jets",
@@ -120,6 +126,9 @@ class Bot:
         reach = float((self.cfg.get("loot", {}) or {}).get("pickup_radius", 4.0))
         self.looter = loot.Looter(self.grid, reach) if self.grid is not None else None
         self.loot_errors = 0
+        self.cuber = loot.CubeHunter(self.grid) if self.grid is not None else None   # sub-09
+        self.cube_errors = 0
+        self.crate_pick = None          # sub-09: (aim point, crate id) chosen this tick, or None
         gc.collect()
         gc.freeze()                     # the grid never changes: keep the GC from rescanning it
 
@@ -133,6 +142,10 @@ class Bot:
             if self.errors <= 5 or self.errors % 200 == 0:
                 log(f"decide failed at tick {obs.get('tick')} ({self.errors} so far):\n{traceback.format_exc()}")
             act = self.fallback(obs)
+            try:
+                self.pick_upgrade(obs, act)      # sub-09: never lose an upgrade choice to a crash
+            except Exception:
+                pass
         dt = time.perf_counter() - t_start
         if dt > 0.02:
             self.slow_ticks += 1
@@ -221,6 +234,45 @@ class Bot:
                     move_yaw = yaw
                     act["move"] = [math.cos(yaw), math.sin(yaw)]
 
+        # ---- cubes (sub-09): walk onto a close, safe cube. Weapons first: only when the weapon rule did nothing.
+        zone_ok = bool(me.get("in_zone", True)) and not boost
+        cube_yaw = None
+        if self.cuber is not None and r is None and zone_ok:
+            try:
+                cube_yaw = self.cuber.update_cube(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
+                                                  ZoneModel.time_until_outside, ZoneModel.circle_at)
+            except Exception:
+                cube_yaw = None
+                self.cube_errors += 1
+                if self.cube_errors <= 5:
+                    log(f"cube failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if cube_yaw is not None:
+                move_yaw = cube_yaw
+                act["move"] = [math.cos(cube_yaw), math.sin(cube_yaw)]
+        # ---- crates (sub-09): no weapon or cube to fetch -> shoot a close, safe ground crate, walking toward it
+        # (its cube drops where it stands; walking the route instead would carry us out of range of it).
+        self.crate_pick = None
+        if self.cuber is not None and r is None and cube_yaw is None and zone_ok and now - self.attack_t >= 4.0:
+            gun = next((w for w in (me.get("weapons") or [])[:2] if w and w.get("kind") == "gun"), None)
+            muzzle = (x, y, z + float((me.get("stats") or {}).get("muzzle_height", 7.0)))
+            try:
+                self.crate_pick = self.cuber.pick_crate(obs, me, now, self.attacker, self.attack_t, zone_ok, zone,
+                                                        walk, self.goal, ZoneModel.time_until_outside,
+                                                        ZoneModel.circle_at, gun, muzzle)
+            except Exception:
+                self.crate_pick = None
+                self.cube_errors += 1
+                if self.cube_errors <= 5:
+                    log(f"crate failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if self.crate_pick is not None:
+                (cx, cy, _), _ = self.crate_pick
+                if math.hypot(cx - x, cy - y) > CRATE_STOP_M:
+                    move_yaw = math.atan2(cy - y, cx - x)
+                    act["move"] = [math.cos(move_yaw), math.sin(move_yaw)]
+                else:
+                    move_yaw = None
+                    act["move"] = [0.0, 0.0]
+
         # ---- stuck: commanded to move but barely moved in the last second -> jump and jet
         jump = False
         if self.stuck(now, x, y, move_yaw is not None):
@@ -239,7 +291,7 @@ class Bot:
         act["jump"] = jump
 
         # ---- 2. aim: face/return fire on an attacker, otherwise look where we go or scan
-        self.aim_and_fire(obs, act, now, move_yaw)
+        self.aim_and_fire(obs, act, now, move_yaw, zone_ok)
         return act
 
     # ------------------------------------------------------------------ helpers
@@ -395,7 +447,7 @@ class Bot:
         act["fire"] = fire
         return True
 
-    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw) -> None:
+    def aim_and_fire(self, obs: dict, act: dict, now: float, move_yaw, zone_ok: bool = False) -> None:
         me = obs["self"]
         x, y, z = me["pos"]
         stats = me.get("stats", {}) or {}
@@ -455,6 +507,30 @@ class Bot:
                 act["fire"] = fire
             return
 
+        # sub-09: nobody to fight and decide() chose a crate -> aim the gun at it (the legs walk toward it)
+        pick = self.crate_pick
+        if not recent and gun is not None and gun_i is not None and self.cuber is not None:
+            if pick is not None:
+                (cx, cy, cz), kid = pick
+                horiz = math.hypot(cx - muzzle[0], cy - muzzle[1])
+                yaw = math.atan2(cy - muzzle[1], cx - muzzle[0])
+                pitch = math.atan2(cz - muzzle[2], max(horiz, 0.1))
+                act["aim"] = [yaw, pitch]
+                cur = me.get("aim") or [yaw, pitch]
+                tol = max(0.01, 1.0 / max(horiz, 1.0))          # crate radius 1.4 m, half height 1.2 m
+                ammo = int(gun.get("ammo", 0) or 0)
+                reloading = float(gun.get("reload", 0) or 0) > 0
+                on = abs(wrap(cur[0] - yaw)) < tol and abs(cur[1] - pitch) < tol
+                if ammo > 0 and not reloading and on:
+                    fire = [False, False]
+                    fire[gun_i] = True
+                    act["fire"] = fire
+                    self.cuber.crates_started.add(kid)
+                    self.cuber.last_shot_t = now
+                elif ammo == 0 and not reloading:
+                    act["reload"] = True
+                return
+
         if recent:
             # hit by something we can't see: face it, front armour takes the hits
             act["aim"] = [self.attack_bearing, 0.0]
@@ -467,6 +543,9 @@ class Bot:
         if gun is not None and gun.get("ammo", 1) < float((gun.get("stats") or {}).get("mag", 12)) / 3 \
                 and gun.get("reload", 0) == 0:
             act["reload"] = True
+        elif (gun is not None and self.cuber is not None and now - self.cuber.last_shot_t < 5.0
+              and gun.get("ammo", 99) < loot.CRATE_RELOAD_BELOW and gun.get("reload", 0) == 0):
+            act["reload"] = True                    # sub-09: reload early after shooting a crate
 
 
 if __name__ == "__main__":

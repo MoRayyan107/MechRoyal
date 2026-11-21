@@ -198,6 +198,38 @@ sub-07 adds shots at a mech that has NOT hit us:
 - RESULT: 2.27, no effect. Base stays sub-05b. sub-07's code stays in history; main's bot.py was restored to sub-05b's
   (commit after 30afa6b) before sub-08.
 
+## sub-09: get cubes (base sub-05b = 2.31)
+
+Why: our bot never collected cubes, so its upgrade code almost never ran. One cube = +4% max HP and damage and, at
+1 cube, an upgrade offer (plating first: about +20% HP in all). Cubes come from crates (1 each, plus a weapon half
+the time), drones, and kills (the dead mech's cubes + 2, dropped on the ground).
+- Gates (same as the weapon rule): no enemy mech listed; no mech hit in the last 4 s; inside the zone and the zone
+  boost condition off. Weapons outrank cubes, cubes outrank crates.
+- Cube: walk onto the nearest visible cube within 60 m whose spot is open walkable ground (not a roof, not a
+  footprint), reachable by a straight walk, no drone within 45 m of it, with the same zone check as weapons
+  (t_out >= there + 1.5 x back + 20 s; inside the circle at arrival + 5 s with 10 m margin). Collected automatically
+  within 3.5 m (no take). Give-up timer counts only time spent on that cube (2 x walk + 4 s).
+- Crate: the nearest visible ground crate within 60 m whose spot passes the same cube checks, with a clear line by our
+  building model, and no hit of any kind in the last 4 s. A new crate needs >= 9 rounds; at most 4 crates started per
+  match; give up after 6 s on one crate. We aim the gun at it (crate centre, tolerance 1 m) and fire, and the legs
+  walk TOWARD the crate (stopping within 8 m), because its cube drops there. Changed from the first description
+  ("shoot while walking the route"): the synthetic test showed the route carrying us from 45 to 62 m away, out of
+  range, with the crate at 30 HP and its cube beyond the 60 m cube limit.
+- Reload early: within 5 s of a crate shot, reload when the magazine is below 6 (the base rule reloads below 4).
+- Crash fallback now also answers an upgrade offer (before: a crash in decide meant the 5 s timeout picked choice 0).
+- Off otherwise: exactly sub-05b (tested: 0 differing actions when no crate or cube is visible).
+- Sound (guess): the squad shares vision and already hunts us, so we assume gun (320 m) and crate (220 m) noise adds
+  little; the kit does not say whether house bots react to sound. Cap: 4 crates a match.
+- Worst case: cube detour up to ~5 s out (give-up after ~14 s); crate: walk up to ~52 m toward it (~4.5 s) and then
+  onto the cube; ~7-10 rounds used and a 2.4 s reload during which the gun cannot fire; a hunter that appears
+  mid-detour turns the rule off at once (it is listed), and the bot is sub-05b again, but our torso may be facing the
+  crate/cube, so a first hit from behind takes x1.5.
+- Synthetic tests (open ground, assumes on-target shots hit): cube 40 m -> collected at 3.1 s, offer [sensors, armor,
+  plating] -> plating, back on the route at 3.3 s. Crate 45 m -> first shot at 0.1 s walking toward it, destroyed at
+  1.6 s after 7 shots (5 rounds left), early reload, cube collected at 3.5 s, plating picked, back on the route at
+  4.2 s with a full magazine.
+- Reading the result vs 2.31: +0.1 or more = keep; within +-0.1 = no effect; below 2.2 = drop it.
+
 ## sub-06 design (rooftop weapons by jump + jets) - ON FILE, NOT BUILT
 
 Reachable roof: pickup cell is a building whose roof height matches the pickup z within 1 m; roof region = connected
@@ -254,8 +286,8 @@ One change: loot.LOOT_M 80 -> 100 (plus the two doc lines that quote it). Everyt
 ## Remaining plan (until Sunday ~1:00 PM UK)
 Base = best-scoring tag so far (sub-05b = 2.31 until sub-08's score is in). One change per submission.
 1. sub-08: ground weapon pickup radius 80 m -> 100 m: 2.27, no effect, dropped (radius stays 80 m).
-2. sub-09: "get cubes" - walk to visible cubes within 60 m (and, possibly as its own submission, shoot visible ground
-   crates within 60 m for their cube). Approved in principle; design questions answered before building.
+2. sub-09: "get cubes" - walk onto visible cubes within 60 m and shoot visible ground crates within 60 m for their
+   cube, as one change (built, waiting for its score).
 3. sub-06: rooftop weapons by jump + jets (design on file above, not built).
 4. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
@@ -272,7 +304,8 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05 (loot 80 m) | Seeds 1-3 PASS: fuzz p99 6.3-6.6 ms, max 7.4-13.2 ms; replay p99 6.2-6.4 ms. Default seed routes 56/60, same as sub-04 and the sub-01 bot. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.9 ms, max 2.1 ms (twice, built from bd9167c) |
 | sub-05b (loot fixes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.8-10.0 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05). Injected crash in loot update + read_events: 300/300 answered | PASS p99 6.5 ms | PASS p99 1.2-1.5 ms, max 1.8 ms (twice, built from 7b2029d) |
 | sub-07 (laser long shots) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.7-8.8 ms; replay p99 6.1-6.2 ms; lone-mech scenario p99 0.13 ms, max 6.3 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b, no laser: 0/3000 random ticks differ; recorded 300 ticks 0 differ with the route field pre-finished (1 tick differs on 1 run in 3 for sub-05b vs itself too: wall-clock field slicing). Injected crash in the new rule: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.0-1.8 ms, max 2.1 ms (twice, built from 30afa6b) |
-| sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | see report |
+| sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | see report |
+| sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.4 ms (4 runs, built from da09fcf) |
 
 ## Submissions
 
@@ -287,3 +320,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-05b | 7b2029dfe317aa58cc33b4c35dcf09b4e9780c95 | sub-05 + loot fixes #2 #6 #8 #9 | 2.31 (same as sub-05; base for sub-07) |
 | sub-07 | 30afa6bec52de8b80454565967d8a9a224c92de6 | sub-05b + laser shots at a lone mech at 45-240 m (option A) | 2.27 (no effect vs 2.31; not built on) |
 | sub-08 | da09fcf24932dc4b5b5e634ce53bf37d2218dbe3 | sub-05b with ground pickup radius 100 m | 2.27 (no effect vs 2.31: drop 100 m, do not build on it) |
+| sub-09 | see `git rev-parse sub-09` | sub-05b + get cubes (cube pickup + crate shooting within 60 m, upgrade pick in the crash fallback) | pending |
