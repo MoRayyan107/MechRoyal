@@ -2,6 +2,7 @@
 
   python tools/sidebyside.py [--base sub-09] [--seed 1] [--fuzz 3000]                    (sub-06 roof rule)
   python tools/sidebyside.py --mode upgrades [--base sub-09] [--seed 1] [--fuzz 3000]   (sub-11 upgrade order)
+  python tools/sidebyside.py --mode drones --base sub-11 [--seed 1] [--fuzz 3000]       (sub-12 drone rule)
 
 The base version's bot files are exported from its git tag into a scratch folder; each bot runs in its own
 process (so the two `bot` / `loot` modules never mix). Both get a fake clock (0.1 ms per call) so the route field is sliced
@@ -20,6 +21,15 @@ Streams:
   offers           the last recorded observation with every possible 3-choice offer (gun only; gun + laser;
                    gun + lightning), run through act() of both bots: gives the table of picks where they differ
   *-crash          Bot.decide raising every call in BOTH versions (the crash fallback answers): same checks
+
+--mode drones (sub-12):
+  recorded         the kit's 300 recorded observations (no drone in them): must match the base on every tick
+  fuzz-nodrone     stress.py's fuzz observations with every drone removed: must match on every tick
+  fuzz             the same fuzz observations, drones kept (mostly with mechs: the rule rarely fires); every diff
+                   must come on or after a tick where the new rule was active
+  fuzz-drones      fuzz observations with the mechs replaced by 1-2 drones at 20-70 m (the rule may fire: diffs
+                   expected; answers and timing checked)
+  *-crash          new bot with DroneHunter.pick raising every call: must match the base on EVERY tick, drones or not
 """
 from __future__ import annotations
 
@@ -27,6 +37,7 @@ import argparse
 import contextlib
 import io
 import json
+import math
 import os
 import random
 import subprocess
@@ -38,7 +49,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FILES = ("bot.py", "loot.py", "nav.py", "mechfight.py")
 
 
-def runner(botdir, hello_path, obs_path, out_path, inject, inject_decide=False):
+def runner(botdir, hello_path, obs_path, out_path, inject, inject_decide=False, inject_drone=False):
     sys.path.insert(0, botdir)
     real_clock = time.perf_counter
     import bot as botmod
@@ -62,6 +73,10 @@ def runner(botdir, hello_path, obs_path, out_path, inject, inject_decide=False):
         def boom(self, *a, **k):
             raise RuntimeError("injected roof crash")
         loot.RoofLooter.update = boom
+    if inject_drone:
+        def boom_drone(self, *a, **k):
+            raise RuntimeError("injected drone crash")
+        loot.DroneHunter.pick = boom_drone
     if inject_decide:
         def boom_decide(self, *a, **k):
             raise RuntimeError("injected decide crash")
@@ -83,6 +98,7 @@ def runner(botdir, hello_path, obs_path, out_path, inject, inject_decide=False):
                 err.write("decide failed")           # the bot logs only its first 5 failures: count them all
             ro = getattr(b, "roofer", None)
             active = ro is not None and (ro.cur is not None or ro.landed is not None)
+            active = active or getattr(b, "drone_pick", None) is not None
             out.append({"a": a, "ms": dt, "roof": active, "fell_back": "decide failed" in err.getvalue(),
                         "offer": bool(o.get("offer"))})
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -97,14 +113,16 @@ def export(tag, dest):
             fh.write(data)
 
 
-def run_bot(botdir, hello_path, obs_path, inject=False, inject_decide=False):
-    out_path = (obs_path + (".inj" if inject else "") + (".injd" if inject_decide else "") + "."
-                + os.path.basename(botdir) + ".json")
+def run_bot(botdir, hello_path, obs_path, inject=False, inject_decide=False, inject_drone=False):
+    out_path = (obs_path + (".inj" if inject else "") + (".injd" if inject_decide else "")
+                + (".injdr" if inject_drone else "") + "." + os.path.basename(botdir) + ".json")
     cmd = [sys.executable, os.path.abspath(__file__), "--run", botdir, hello_path, obs_path, out_path]
     if inject:
         cmd.append("--inject")
     if inject_decide:
         cmd.append("--inject-decide")
+    if inject_drone:
+        cmd.append("--inject-drone")
     subprocess.run(cmd, check=True)
     with open(out_path, encoding="utf-8") as fh:
         return json.load(fh)
@@ -129,14 +147,14 @@ def compare(name, base, new):
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--run":
         runner(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], "--inject" in sys.argv,
-               "--inject-decide" in sys.argv)
+               "--inject-decide" in sys.argv, "--inject-drone" in sys.argv)
         return
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="sub-09")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--fuzz", type=int, default=3000)
     ap.add_argument("--tmp", default=None)
-    ap.add_argument("--mode", choices=["roof", "upgrades"], default="roof")
+    ap.add_argument("--mode", choices=["roof", "upgrades", "drones"], default="roof")
     args = ap.parse_args()
     tmp = args.tmp or tempfile.mkdtemp(prefix="sbs_")
     base_dir = os.path.join(tmp, "base")
@@ -167,6 +185,8 @@ def main():
 
     if args.mode == "upgrades":
         sys.exit(upgrades_mode(args, tmp, base_dir, new_dir, hello, hello_path, stream, fuzz))
+    if args.mode == "drones":
+        sys.exit(drones_mode(args, tmp, base_dir, new_dir, hello_path, stream, fuzz))
 
     noroof = []
     for o in fuzz:
@@ -199,6 +219,57 @@ def main():
                     ok = False
     print("PASS" if ok else "FAIL")
     sys.exit(0 if ok else 1)
+
+
+def drones_mode(args, tmp, base_dir, new_dir, hello_path, stream, fuzz):
+    rng = random.Random(1000 + args.seed)
+    nodrone, drones = [], []
+    for o in fuzz:
+        o2 = json.loads(json.dumps(o))
+        o2["mechs"] = [m for m in o2.get("mechs") or [] if m.get("kind") != "npc"]
+        nodrone.append(o2)
+        o3 = json.loads(json.dumps(o))
+        x, y, z = o3["self"]["pos"]
+        o3["mechs"] = []
+        for k in range(rng.choice([1, 1, 2])):
+            a = rng.uniform(-3.14159, 3.14159)
+            d = rng.uniform(20, 70)
+            o3["mechs"].append({"id": 100 + k, "kind": "npc", "pos": [x + d * math.cos(a), y + d * math.sin(a), z],
+                                "vel": [rng.uniform(-5, 5), rng.uniform(-5, 5), 0], "aim": [0, 0],
+                                "hp": rng.choice([350, 350, 120]), "max_hp": 350})
+        o3["self"]["hp"] = rng.choice([1400, 1400, 1000, 600])
+        g3 = next((w for w in o3["self"].get("weapons") or [] if w and w.get("kind") == "gun"), None)
+        if g3 is not None:               # the kit's last observation has an empty, reloading gun: load it mostly
+            g3["ammo"], g3["reload"] = rng.choice([(12, 0), (12, 0), (11, 0), (4, 0), (0, 1.2)])
+        drones.append(o3)
+    streams = {"recorded": stream, "fuzz-nodrone": nodrone, "fuzz": fuzz, "fuzz-drones": drones}
+    paths = {}
+    for k, v in streams.items():
+        paths[k] = os.path.join(tmp, "d_" + k + ".jsonl")
+        with open(paths[k], "w", encoding="utf-8") as fh:
+            for o in v:
+                fh.write(json.dumps(o) + "\n")
+    print(f"mode drones: base = {args.base} (exported to {base_dir}); new = working tree; fuzz seed {args.seed}")
+    ok = True
+    base_runs = {}
+    for k in ("recorded", "fuzz-nodrone", "fuzz", "fuzz-drones"):
+        b = run_bot(base_dir, hello_path, paths[k])
+        n = run_bot(new_dir, hello_path, paths[k])
+        base_runs[k] = b
+        diffs, before = compare(k, b, n)
+        if k in ("recorded", "fuzz-nodrone") and diffs:
+            ok = False
+        if before:
+            ok = False
+        if any(r["a"].get("tick") is None for r in n) or any(r["fell_back"] for r in n):
+            ok = False
+    for k in ("recorded", "fuzz", "fuzz-drones"):
+        ni = run_bot(new_dir, hello_path, paths[k], inject_drone=True)
+        d2, _ = compare(k + "-crash", base_runs[k], ni)
+        if d2 or any(r["a"].get("tick") is None for r in ni):
+            ok = False
+    print("PASS" if ok else "FAIL")
+    return 0 if ok else 1
 
 
 def compare_upgrades(name, base, new):

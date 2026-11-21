@@ -336,6 +336,48 @@ Results (offline, our model):
 - RESULT: 2.52 (+0.04), no effect, harmless, as expected (fires in ~3-6% of matches). Not the base;
   sub-06 stays in history.
 
+## sub-12: shoot a nearby drone for its 2 cubes (base sub-11 = 2.69)
+
+One change: new `loot.DroneHunter`, wired into bot.py between the cube rule and the crate rule (cubes first, then
+drones, then crates), plus the gun aim at the chosen drone. Everything else is sub-11.
+- Why: the upgrade path moved the score (sub-09 cubes +0.17, sub-11 order +0.21). A drone gives 2 cubes = the first
+  offer and +8% HP and damage, and we usually die early (~13th), so early cubes matter most.
+- Drone facts (protocol 7, hello.config.npc): 350 HP; radius 1.8, height 3.5; walks 5 m/s within 30 m of home. It
+  shoots unprovoked only at mechs within 45 m (aggro_range) with line of sight while it is within 30 m of home; once
+  attacked it shoots back (no bullet range is given anywhere: GUESS that it reaches us at any distance we shoot from)
+  and chases until we are 90 m away or it is 60 m from home. Its bullets: 25 damage, 90 m/s, 1 s cooldown, 2.5 deg
+  spread. 2 cubes drop where it dies. Drones are not hurt by the zone.
+- Gates, every tick (also mid-attack): no enemy mech listed; no mech hit us in the last 4 s; inside the zone and the
+  zone not pressing; gun held; HP >= 60% of max; the drone within 60 m (= the cube rule's reach, so its cubes are
+  always fetched by the unchanged sub-09 cube rule) on open walkable ground with a straight walk, zone slack and inside
+  the next circle (the cube spot checks); no OTHER drone within 45 m of it; a clear line from our muzzle to its centre.
+  A new drone needs >= 10 rounds and no reload in progress; at most 3 drones a match; give up after 5 s on one.
+  Drones with hp <= 0 are ignored.
+- Stop distance 50 m (asked: choose it from the drone's numbers). Our gun hit chance on a drone (GUESS: spread_deg is
+  a Gaussian sigma, lead error sigma = 0.5 x 5 m/s x (flight + 0.1 s)): 99% at 40 m, 98% at 50 m, 95% at 60 m, 92% at
+  70 m, 87% at 80 m, 76% at 100 m. So our gun is reliable past the 60 m start limit and is not what binds. What binds
+  is the drone's 45 m unprovoked aggro: 50 m keeps 5 m (1 s of drone movement) outside it, and 10 m inside the 60 m
+  window so a wandering drone does not drift out of reach mid-kill. The legs walk toward the drone only while it is
+  farther than 50 m, else hold position (as the crate rule does within 8 m). Once shot, it chases us at 5 m/s, so it
+  dies at ~40 m (see the scenario). The drone on us standing still (same GUESS): 78% of its shots hit at 50 m.
+- Aim: the gun only, with the same lead as for mechs (laser/lightning are not used by this rule; if the drone hits us,
+  the existing return-fire rule takes it as the attacker, exactly as in sub-11). After the drone dies the sub-09
+  early-reload rule applies (reload below 6 rounds when nobody is around).
+- Off: no drone listed -> nothing in DroneHunter changes state, and bot.py runs sub-11's code path (tested: 0 diffs).
+- How often (GUESS): 12 drones on a ~560 m radius map; over the first ~300 m of walking a 120 m wide strip covers
+  ~0.6 drones; with line of sight and the gates, fires in ~15-30% of matches.
+- Worst case (a hunter shows up mid-attack): the rule switches off that tick and the sub-11 fight code takes over. We
+  may be mid-magazine: a forced 2.4 s reload (1.9 s with gun_mag) is ~450 HP (32%) at a hunter's 187 dps before we can
+  answer; a wounded drone adds 25 dps and stops our regen; we may be ~5 s off route on open ground. Gun noise is the
+  same as crate shooting. Whether drones draw hunters is not documented.
+- Expected gain (GUESS): +0.03 to +0.10; it may well read as no effect.
+- Reading vs 2.69: 2.79 or more keep; 2.59-2.79 no effect; below 2.59 drop. sub-11 stays the safe final candidate.
+- Scenario (`tools/dronesim.py`, GUESS-level physics; the real Bot.act() in the loop): one drone at 50 m on open ground
+  near the next circle's centre, nobody else, full magazine. 20 seeds: killed 20/20, time to kill median 2.15 s (worst
+  2.35 s) from the start, 8 shots / 8 hits each, closest the drone got 40-41 m, damage taken median 50 (0-50), both cubes
+  collected 20/20 at 5.3-5.7 s, the first-cube offer answered 20/20 (picks: gun_mag 6, plating 3, armor 3, gun_damage 3,
+  gun_rate 2, gyros 1 ...: the sub-11 order). Same with 2 cubes already held (10 seeds). Max tick 6.4 ms.
+
 ## sub-11: upgrade choice order (base sub-09 = 2.48)
 
 One change: `bot.UPGRADE_ORDER`. bot.py and loot.py were first restored byte-identical to sub-09 (commit e075b80).
@@ -410,7 +452,7 @@ Base = best-scoring tag so far: sub-11 = 2.69 (ad43effd079ac41e56ff1ea5a4f567403
    sub-10: cube and crate radius 60 m -> 80 m: 2.44, no effect, dropped (radius stays 60 m).
 3. sub-06: rooftop weapons by jump + jets, on sub-09: 2.52, no effect, harmless, not the base.
 4. sub-11: upgrade choice order, on sub-09: 2.69, kept, NEW BASE.
-5. Next (design only, waiting for approval): one change on sub-11 for more cubes = more upgrade offers.
+5. sub-12: shoot a nearby drone for its 2 cubes, on sub-11: built 21 Nov; keep only if >= 2.79.
 6. Laser rule follow-up (only if a laser rule is retried): require the line to stay clear for 2-3 ticks before
    starting a charge, so blocked lines do not waste auto-fired shots (seen in the sub-07 recorded-match check).
 Stop building about 1:00 PM UK Sunday; final checks after that.
@@ -429,6 +471,7 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-09 (get cubes) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.1 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Crate path active (2000 ticks, 4 crates in range): p99 6.3 ms, max 6.6 ms. Side by side vs sub-05b with no crate/cube: 0/3000 random, 0/299 recorded (also 0/299 with the recorded crates/cubes kept: nearest crate 79 m). Injected crash in cube + crate code: 300/300 answered, 300/300 equal to sub-05b. Decide crash with an offer: fallback picks plating (sub-05b: no pick) | PASS p99 6.4 ms | PASS p99 1.3-1.4 ms, max 1.6 ms (twice, built from ef5de74) |
 | sub-10 (cube/crate 80 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-7.5 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-09). Fuzz with crates/cubes out to 100 m: p99 6.3 ms, max 9.0 ms. Side by side vs sub-09 with nothing at 60-80 m: 0/3000 random ticks (9600 crates/cubes at 0-60 and 80-100 m kept), 0/299 recorded. Injected crash in cube + crate code: 300/300 answered. Synthetic 70 m on open ground: cube collected at 5.6 s, plating picked, back on route at 5.8 s; crate destroyed at 1.6 s (7 shots, walking toward it), early reload, cube at 5.6 s, plating, route at 5.8 s; sub-09 ignores both | PASS p99 6.5 ms | result lost with the old session (never written here) |
 | sub-06 (rooftop weapons, on sub-09) | Seeds 2-3 PASS: fuzz p99 7.4-8.5 ms, max 11.2-14.7 ms (machine noise: the rule itself max 0.07 ms in fuzz, 0.26 ms with real roof planning; sub-09 on the same machine max 6.5-8.5 ms); replay p99 6.2-6.4 ms. Seed 1 routes 56/60, same as sub-09 on this machine (58/60, 60/60 on seeds 2-3, identical). Side by side vs sub-09 (`tools/sidebyside.py`, seeds 1 and 2): recorded 300, fuzz without roof pickups 3000, fuzz with them 3000: 0 differing actions each (the fuzz never triggers the rule); injected crash in RoofLooter.update: 300/300 and 3000/3000 answered, 0 differ. Closed-loop tests in `tools/jetsim.py` (sweep, recorded, gates): see the sub-06 section | PASS p99 6.4 ms, max 6.6 ms | PASS p99 1.6-2.1 ms (twice, working tree); PASS p99 3.4-3.9 ms, max 5.0 and 18.8 ms (twice, built from a git archive of 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1) |
+| sub-12 (drones, on sub-11) | Seeds 1-3: fuzz p99 6.3 ms, max 6.7-7.6 ms; replay p99 6.2 ms; routes 56/60, 58/60, 60/60 (identical to sub-11). Side by side vs sub-11 (`tools/sidebyside.py --mode drones --base sub-11`, seed 1): recorded 300 and fuzz with drones removed 3000: 0 differ; fuzz with drones kept 3000: 0 differ (rule never active: drones there come with mechs); fuzz with 1-2 drones at 20-70 m and a loaded gun 3000: 13 differ, all on the 13 ticks the rule was active (0 before). Injected crash (DroneHunter.pick raising every call): recorded 300/300, fuzz 3000/3000, fuzz-drones 3000/3000 answered, 0 differ from sub-11 on every tick. Scenario: see sub-12 section | PASS p99 6.5 ms | see below |
 | sub-11 (upgrade order, on sub-09) | Seeds 1-3: fuzz p99 6.3 ms, max 6.5-8.0 ms; replay p99 6.2 ms; routes 56/60, 58/60, 60/60 (identical to sub-09 on this machine). Side by side vs sub-09 (`tools/sidebyside.py --mode upgrades`, seeds 1 and 2): recorded 300 and fuzz 3000 ticks: 0 differ without an offer pending (2721 / 2699 such fuzz ticks); on offer ticks only `pick` differs; all 1406 possible offers: pick differs on 790, nothing else differs. Injected crash (Bot.decide raising every tick in both): 300/300, 3000/3000, 1406/1406 answered by the fallback, 0 differ without an offer | PASS p99 6.5 ms | PASS p99 1.1-1.2 ms, max 1.1-1.7 ms (twice, built from a git archive of ad43effd079ac41e56ff1ea5a4f56740342f1cc8) |
 | sub-08 (loot 100 m) | Seeds 1-3 PASS: fuzz p99 6.3 ms, max 6.6-9.3 ms; replay p99 6.2 ms. Default seed routes 56/60 (same as sub-05b). Side by side vs sub-05b with pickups at 80-100 m removed: 0/3000 random ticks, 0/299 recorded ticks (route field pre-finished). Synthetic laser 90 m away on open ground: sub-08 takes it at t=7.4 s and resumes the route; sub-05b ignores it. Injected loot crash: 300/300 answered | PASS p99 6.4 ms | PASS p99 1.2-1.4 ms (4 runs, built from da09fcf) |
 
@@ -449,3 +492,4 @@ Stop building about 1:00 PM UK Sunday; final checks after that.
 | sub-10 | be98e65d4328e12fde3ab1eeedcbb6e24335393b | sub-09 with cube and crate radius 80 m | 2.44 (no effect vs 2.48: drop 80 m, cube/crate radius stays 60 m) |
 | sub-06 | 9c827c71c8ad1a0e5dcf84a185cb617a8ce617d1 | sub-09 + rooftop laser/lightning by jump + jets | 2.52 (no effect vs 2.48, harmless; not the base) |
 | sub-11 | ad43effd079ac41e56ff1ea5a4f56740342f1cc8 | sub-09 with the upgrade order changed (plating, gun_mag, gun_damage, laser_damage, armor, nanites, ...) | 2.69 (+0.21 vs 2.48: keep, BEST, new base) |
+| sub-12 | tag sub-12 (full hash recorded in the commit after it) | sub-11 + shoot a lone drone within 60 m for its 2 cubes (stop at 50 m) | pending |

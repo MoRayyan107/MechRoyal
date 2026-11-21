@@ -19,6 +19,10 @@ built from small, readable rules, in priority order:
    while walking toward it (its cube drops there; >= 9 rounds to start, at most 4 crates a
    match), reloading early after.
    Each cube is +4% HP and damage, and the 1st, 3rd, 6th ... bring an upgrade (plating first).
+6. Drones (sub-12, loot.DroneHunter): with the same gates, HP >= 60% and >= 10 rounds, shoot a visible drone
+   within 60 m on open ground (no other drone within 45 m of it) with the gun, walking toward it only while it is
+   farther than 50 m (its unprovoked aggro range is 45 m). Its 2 cubes are collected by rule 5. Cubes come first,
+   then drones, then crates; at most 3 drones a match, 5 s each.
 
 Every tick runs inside try/except; if the main logic fails, a tiny fallback (walk to
 the zone centre) answers instead, so the mech never stands still because of a bug.
@@ -131,6 +135,9 @@ class Bot:
         self.cuber = loot.CubeHunter(self.grid) if self.grid is not None else None   # sub-09
         self.cube_errors = 0
         self.crate_pick = None          # sub-09: (aim point, crate id) chosen this tick, or None
+        self.droner = loot.DroneHunter(self.grid, self.cuber) if self.cuber is not None else None   # sub-12
+        self.drone_errors = 0
+        self.drone_pick = None          # sub-12: the drone (obs.mechs entry) chosen this tick, or None
         gc.collect()
         gc.freeze()                     # the grid never changes: keep the GC from rescanning it
 
@@ -251,10 +258,33 @@ class Bot:
             if cube_yaw is not None:
                 move_yaw = cube_yaw
                 act["move"] = [math.cos(cube_yaw), math.sin(cube_yaw)]
+        # ---- drones (sub-12): no weapon or cube to fetch -> shoot a close, safe drone for its 2 cubes, walking
+        # toward it only while it is farther than DRONE_STOP_M (outside its 45 m aggro range), else holding.
+        self.drone_pick = None
+        if self.droner is not None and r is None and cube_yaw is None and zone_ok:
+            dgun = next((w for w in (me.get("weapons") or [])[:2] if w and w.get("kind") == "gun"), None)
+            dmuzzle = (x, y, z + float((me.get("stats") or {}).get("muzzle_height", 7.0)))
+            try:
+                self.drone_pick = self.droner.pick(obs, me, now, self.attacker, self.attack_t, zone, walk, self.goal,
+                                                   ZoneModel.time_until_outside, ZoneModel.circle_at, dgun, dmuzzle)
+            except Exception:
+                self.drone_pick = None
+                self.drone_errors += 1
+                if self.drone_errors <= 5:
+                    log(f"drone failed at tick {obs.get('tick')}: {traceback.format_exc()}")
+            if self.drone_pick is not None:
+                dx, dy = self.drone_pick["pos"][0], self.drone_pick["pos"][1]
+                if math.hypot(dx - x, dy - y) > loot.DRONE_STOP_M:
+                    move_yaw = math.atan2(dy - y, dx - x)
+                    act["move"] = [math.cos(move_yaw), math.sin(move_yaw)]
+                else:
+                    move_yaw = None
+                    act["move"] = [0.0, 0.0]
         # ---- crates (sub-09): no weapon or cube to fetch -> shoot a close, safe ground crate, walking toward it
         # (its cube drops where it stands; walking the route instead would carry us out of range of it).
         self.crate_pick = None
-        if self.cuber is not None and r is None and cube_yaw is None and zone_ok and now - self.attack_t >= 4.0:
+        if (self.cuber is not None and r is None and cube_yaw is None and self.drone_pick is None and zone_ok
+                and now - self.attack_t >= 4.0):
             gun = next((w for w in (me.get("weapons") or [])[:2] if w and w.get("kind") == "gun"), None)
             muzzle = (x, y, z + float((me.get("stats") or {}).get("muzzle_height", 7.0)))
             try:
@@ -479,7 +509,11 @@ class Bot:
                 laser_i = i
             elif w.get("kind") == "lightning":
                 bolt_i = i
-        if target is not None and (laser_i is not None or bolt_i is not None):
+        drone_shot = False
+        if target is None and self.drone_pick is not None and gun is not None and gun_i is not None:
+            target = self.drone_pick        # sub-12: nobody to fight and decide() chose a drone: the gun, with lead
+            drone_shot = True
+        if target is not None and not drone_shot and (laser_i is not None or bolt_i is not None):
             if self.fire_special(me, act, target, muzzle, weapons, gun, gun_i, laser_i, bolt_i):
                 return
         if target is not None and gun is not None:
@@ -507,6 +541,9 @@ class Bot:
                 fire = [False, False]
                 fire[gun_i if gun_i is not None else 0] = True
                 act["fire"] = fire
+                if (self.drone_pick is not None and self.cuber is not None
+                        and target.get("id") == self.drone_pick.get("id")):
+                    self.cuber.last_shot_t = now     # sub-12: the sub-09 early reload also follows a drone
             return
 
         # sub-09: nobody to fight and decide() chose a crate -> aim the gun at it (the legs walk toward it)

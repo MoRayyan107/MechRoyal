@@ -268,3 +268,86 @@ class CubeHunter:
             self.crate_prev_t = None
             return None
         return aim_pt, kid
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# sub-12: shoot a nearby drone for its 2 cubes
+DRONE_SHOOT_M = 60.0      # = CUBE_M: a drone this close dies where its 2 cubes stay inside the cube rule's reach
+DRONE_STOP_M = 50.0       # walk toward the drone only while farther than this: 5 m outside its 45 m aggro range
+                          # (npc.aggro_range), 10 m inside DRONE_SHOOT_M so a wandering drone (5 m/s) stays in reach
+DRONE_MIN_AMMO = 10       # start a new drone only with this many rounds (350 HP / 45 = 8 hits + misses)
+DRONE_MAX = 3             # drones started per match
+DRONE_GIVEUP_S = 5.0      # stop on a drone still alive after this long (the base return-fire still answers its hits)
+DRONE_MIN_HP = 0.6        # our HP / max HP needed (checked every tick)
+DRONE_AIM_Z = 1.75        # drone centre above its pos (npc.height 3.5 m)
+
+
+class DroneHunter:
+    """sub-12: shoot a visible drone within DRONE_SHOOT_M for its 2 cubes (the sub-09 cube rule collects them).
+
+    * Gates, every tick (also mid-attack): no enemy mech listed and no mech hit in the last SAFE_HIT_S seconds
+      (CubeHunter.gates_ok); inside the zone and the zone not pressing (the caller); gun held; HP >= DRONE_MIN_HP of
+      max; the drone's spot passes the cube checks (within DRONE_SHOOT_M, open walkable ground, straight walk, zone
+      slack, inside the next circle) with no OTHER drone within DRONE_M of it; clear line from our muzzle to it.
+    * A new drone needs >= DRONE_MIN_AMMO rounds, not reloading, and fewer than DRONE_MAX started this match. A drone
+      already started is finished first. Give up on it after DRONE_GIVEUP_S of time spent on it.
+    * The caller walks toward it while farther than DRONE_STOP_M, else holds, and aims the gun with lead.
+    * OFF (None) when no drone is listed: nothing here changes state then.
+    """
+
+    def __init__(self, grid, cuber):
+        self.g = grid
+        self.cuber = cuber
+        self.spent = {}
+        self.prev_t = None
+        self.banned = set()
+        self.started = set()
+
+    def pick(self, obs, me, now, attacker, attack_t, zone, walk, goal, t_out_fn, circle_fn, gun, muzzle):
+        """None (off) or the drone (an obs.mechs entry) to shoot this tick."""
+        drones = [m for m in obs.get("mechs") or [] if m.get("kind") == "npc" and m.get("pos")
+                  and (m.get("hp") is None or m.get("hp") > 0)]
+        if not drones:
+            self.prev_t = None
+            return None
+        if gun is None or not CubeHunter.gates_ok(obs, attacker, attack_t, now):
+            self.prev_t = None
+            return None
+        max_hp = float(me.get("max_hp") or 0) or 1.0
+        if float(me.get("hp", max_hp)) < DRONE_MIN_HP * max_hp:
+            self.prev_t = None
+            return None
+        x, y = me["pos"][0], me["pos"][1]
+        ammo = int(gun.get("ammo", 0) or 0)
+        reloading = float(gun.get("reload", 0) or 0) > 0
+        best = None
+        for dr in drones:
+            did = dr.get("id")
+            if did in self.banned:
+                continue
+            if did not in self.started and (len(self.started) >= DRONE_MAX or ammo < DRONE_MIN_AMMO or reloading):
+                continue
+            px, py, pz = dr["pos"]
+            others = [m["pos"] for m in drones if m is not dr]
+            d = self.cuber.spot_ok(px, py, pz, x, y, DRONE_SHOOT_M, others, zone, walk, goal, now, t_out_fn,
+                                   circle_fn)
+            if d is None:
+                continue
+            if not self.g.los(muzzle, (px, py, pz + DRONE_AIM_Z)):
+                continue
+            key = (did not in self.started, d)            # finish a drone we started before a new one
+            if best is None or key < best[0]:
+                best = (key, did, dr)
+        if best is None:
+            self.prev_t = None
+            return None
+        _, did, dr = best
+        self.started.add(did)
+        dt = 0.1 if self.prev_t is None else min(max(now - self.prev_t, 0.0), 0.2)
+        self.spent[did] = self.spent.get(did, 0.0) + dt
+        self.prev_t = now
+        if self.spent[did] > DRONE_GIVEUP_S:
+            self.banned.add(did)
+            self.prev_t = None
+            return None
+        return dr
