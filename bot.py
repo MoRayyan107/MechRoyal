@@ -40,10 +40,10 @@ SLICE_S = 0.006          # time we allow the route search per tick (seconds)
 CRATE_STOP_M = 8.0       # sub-09: stop walking toward a crate we are shooting this close to it
 
 # Upgrade preference: survival first. Anything not listed is ranked after these.
-UPGRADE_ORDER = ["plating", "gun_mag", "gun_damage", "laser_damage", "armor", "nanites", "laser_charge",
-                 "gun_rate", "lightning_range", "lightning_efficiency", "gyros", "gun_velocity", "sensors",
+UPGRADE_ORDER = ["gun_mag", "gun_damage", "gun_rate", "laser_damage", "laser_charge", "plating", "armor", "nanites",
+                 "lightning_range", "lightning_efficiency", "gyros", "gun_velocity", "sensors",
                  "lightning_chain", "servos", "reactor", "capacitor", "jets", "laser_pierce",
-                 "mortar_splash", "mortar_reload", "mortar_velocity"]   # sub-11: every config id listed
+                 "mortar_splash", "mortar_reload", "mortar_velocity"]   # sub-13: fight first; every config id listed
 
 
 def wrap(a: float) -> float:
